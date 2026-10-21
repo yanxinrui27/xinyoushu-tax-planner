@@ -1,16 +1,16 @@
-import {blank,demo,month,migrate,validate,calculate,numKeys,quickKeys,cashKeys,total,VERSION} from './engine.mjs';
+import {blank,demo,month,migrate,validate,calculate,quickKeys,cashKeys,total,VERSION,lawfulKeys,lawfulDeductions,lawfulTotal,contributionAmounts} from './engine.mjs';
 import {deduction,TYPES} from './deductions.mjs';
 import {KEY,initialState,readState,writeState} from './storage.mjs';
 import {page,names,labels} from './ui.mjs';
 
-let state=demo(),tab='overview',dirty=false,editDed=null,loadError='';
+let state=demo(),tab='overview',dirty=false,editDed=null,loadError='',flowStep=1;
 try{state=initialState(localStorage);}catch(error){loadError=`本机记录未加载：${error.message}。原始数据未覆盖，可到设置页导出备份。`;}
 const app=document.querySelector('#app');
 function toast(message){
   const el=document.querySelector('#toast');el.textContent=message;el.style.display='block';
   clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',4200);
 }
-function render(){app.innerHTML=page(state,tab,editDed);bind();}
+function render(){app.innerHTML=page(state,tab,editDed,flowStep);bind();}
 function leave(){if(dirty&&!confirm('当前有未保存输入，放弃修改并继续？'))return false;dirty=false;return true;}
 function commit(next,message){
   validate(next);if(loadError)throw Error('原始记录加载失败，先导出原始记录或导入有效备份，再修改数据。');
@@ -21,11 +21,21 @@ function cents(value){
   if(!/^\d+(?:\.\d{1,2})?$/.test(String(value)))throw Error('金额需为非负数，最多保留两位小数');
   return Math.round(Number(value)*100);
 }
+function optionalCents(value){return value===''?null:cents(value);}
+function basisPoints(value){
+  if(!/^\d+(?:\.\d{1,2})?$/.test(String(value))||Number(value)>100)throw Error('缴费比例须为0%至100%，最多两位小数');
+  return Math.round(Number(value)*100);
+}
+function readLawful(fd,prefix){
+  const values=lawfulDeductions();
+  for(const key of lawfulKeys)values[key]=fd.has(`${prefix}law_enabled_${key}`)?cents(fd.get(`${prefix}law_${key}`)??'0'):0;
+  return values;
+}
 function go(next){
   if(!leave())return;
   if(next==='monthly')state.mode='monthly';
   if(next==='quick')state.mode='quick';
-  tab=next;editDed=null;render();window.scrollTo(0,0);
+  tab=next;editDed=null;flowStep=1;render();window.scrollTo(0,0);
 }
 function submitForm(id,handler){
   const form=document.querySelector('#'+id);if(!form)return;
@@ -35,25 +45,35 @@ function submitForm(id,handler){
 function bind(){
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>go(b.dataset.tab));
   document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{
-    if(!leave())return;state.mode=b.dataset.mode;tab=state.mode==='quick'?'quick':'monthly';editDed=null;render();
+    if(!leave())return;state.mode=b.dataset.mode;tab=state.mode==='quick'?'quick':'monthly';editDed=null;flowStep=1;render();
   });
-  document.querySelectorAll('[data-month]').forEach(b=>b.onclick=()=>{if(!leave())return;state.selected=Number(b.dataset.month);state.mode='monthly';tab='monthly';render();});
+  document.querySelectorAll('[data-month]').forEach(b=>b.onclick=()=>{if(!leave())return;state.selected=Number(b.dataset.month);state.mode='monthly';tab='monthly';flowStep=1;render();window.scrollTo(0,0);});
+  document.querySelectorAll('[data-flow-step]').forEach(b=>b.onclick=()=>{
+    if(b.disabled||!leave())return;flowStep=Number(b.dataset.flowStep);render();window.scrollTo(0,0);
+  });
   document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>attempt(()=>action(b.dataset.action)));
   document.querySelector('#year').onchange=e=>attempt(()=>{
     if(!leave()){e.target.value=state.year;return;}
-    const y=Number(e.target.value);state=readState(localStorage,y)??blank(y);tab='overview';editDed=null;render();
+    const y=Number(e.target.value);state=readState(localStorage,y)??blank(y);tab='overview';editDed=null;flowStep=1;render();
   });
   submitForm('monthForm',fd=>{
     const next=structuredClone(state),m=month();
-    for(const k of numKeys)m[k]=cents(fd.get(k));
+    for(const k of ['salary','bonus','overtime','allowance','reduction','fundExtra','pensionPay','after','reimburse'])m[k]=cents(fd.get(k));
+    m.socialBase=optionalCents(fd.get('socialBase'));m.fundBase=optionalCents(fd.get('fundBase'));m.fundEnabled=fd.has('fundEnabled');
+    for(const k of ['pensionRate','medicalRate','unemploymentRate','maternityRate','injuryRate','fundRate'])m[k]=basisPoints(fd.get(k));
+    Object.assign(m,contributionAmounts(m));m.lawfulDeductions=readLawful(fd,'');m.otherDeduct=lawfulTotal(m.lawfulDeductions);
     m.status=fd.get('status');m.actualTax=fd.get('actualTax')===''?null:cents(fd.get('actualTax'));
-    next.months[next.selected]=m;commit(next,'已保存；相关月份与年度方案已重算');render();
+    const gross=m.salary+m.bonus+m.overtime+m.allowance-m.reduction,cash=total(cashKeys.map(k=>m[k]));
+    if(!confirm(`确认提交${next.selected+1}月数据并计算？\n\n应税工资收入：¥ ${(gross/100).toFixed(2)}\n个人社保及公积金：¥ ${(cash/100).toFixed(2)}\n其他依法扣除：¥ ${(m.otherDeduct/100).toFixed(2)}`))return;
+    next.months[next.selected]=m;commit(next,'已保存；相关月份与年度方案已重算');flowStep=2;render();window.scrollTo(0,0);
   });
   submitForm('quickForm',fd=>{
     const next=structuredClone(state);
-    for(const k of quickKeys)next.quick[k]=cents(fd.get('q_'+k));
+    for(const k of quickKeys.filter(k=>k!=='otherDeduct'))next.quick[k]=cents(fd.get('q_'+k));
+    next.quick.lawfulDeductions=readLawful(fd,'q_');next.quick.otherDeduct=lawfulTotal(next.quick.lawfulDeductions);
     next.quick.confirmed=fd.has('quickConfirmed');next.mode='quick';
-    commit(next,next.quick.confirmed?'年度输入已确认，未改动月度记录':'已保存草稿，确认完整输入后才能推荐');render();
+    if(!confirm(`确认提交${next.year}年度快算数据？\n\n全年工资：¥ ${(next.quick.salary/100).toFixed(2)}\n个人社保及公积金：¥ ${(next.quick.cash/100).toFixed(2)}\n其他依法扣除：¥ ${(next.quick.otherDeduct/100).toFixed(2)}\n\n月度记录不会被修改。`))return;
+    commit(next,next.quick.confirmed?'年度输入已确认，未改动月度记录':'已保存草稿，确认完整输入后才能查看正式结果');flowStep=next.quick.confirmed?2:1;render();window.scrollTo(0,0);
   });
   submitForm('planForm',fd=>{
     const next=structuredClone(state);next.bonus=cents(fd.get('annualBonus'));next.pensionPlan=cents(fd.get('pensionPlan'));
@@ -63,7 +83,27 @@ function bind(){
   });
   const scope=document.querySelector('#scope');
   if(scope)scope.onchange=()=>attempt(()=>{const next=structuredClone(state);next.scope=scope.checked;commit(next,'适用范围已保存');render();});
-  bindDeductions();bindImport();
+  bindLawfulChoices();bindContributionPreview();bindDeductions();bindImport();
+}
+function bindLawfulChoices(){
+  document.querySelectorAll('[data-law-toggle]').forEach(box=>box.onchange=()=>{
+    const input=document.querySelector(`#${box.dataset.lawToggle}`);if(!input)return;
+    input.disabled=!box.checked;if(box.checked)input.focus();else input.value='0.00';dirty=true;
+  });
+}
+function bindContributionPreview(){
+  const form=document.querySelector('#monthForm');if(!form)return;
+  const ids=['salary','socialBase','fundBase','pensionRate','medicalRate','unemploymentRate','maternityRate','injuryRate','fundRate','fundEnabled'];
+  const update=()=>{
+    try{
+      const fd=new FormData(form),m=month({salary:cents(fd.get('salary')),socialBase:optionalCents(fd.get('socialBase')),fundBase:optionalCents(fd.get('fundBase')),fundEnabled:fd.has('fundEnabled')});
+      for(const k of ['pensionRate','medicalRate','unemploymentRate','maternityRate','injuryRate','fundRate'])m[k]=basisPoints(fd.get(k));
+      const out=contributionAmounts(m);
+      for(const [k,v] of Object.entries(out)){const el=document.querySelector(`[data-contribution-output="${k}"]`);if(el)el.textContent=`¥ ${(v/100).toFixed(2)}`;}
+    }catch{}
+  };
+  for(const id of ids){const el=document.querySelector('#'+id);if(el)el.addEventListener('input',update);}
+  update();
 }
 function readDed(fd){
   const d={...editDed,type:fd.get('d_type'),person:fd.get('d_person').trim(),amount:cents(fd.get('d_amount')),usage:fd.get('d_usage'),timing:fd.get('d_timing'),confirmed:fd.has('d_confirmed')};
@@ -102,11 +142,11 @@ function bindImport(){
       const file=input.files[0];if(!file)return;
       if(file.size>2000000)throw Error('备份文件超过2MB');
       const raw=await file.text(),pack=JSON.parse(raw),data=pack.data??pack;
-      if(pack.rules&&pack.rules!==VERSION&&data.version===2)throw Error('规则版本不匹配，请使用对应版本工具核对后导入');
+      if(pack.rules&&pack.rules!==VERSION&&data.version===3)throw Error('规则版本不匹配，请使用对应版本工具核对后导入');
       const next=migrate(data);
       if(!confirm(`导入${next.year}年度记录，将替换该年度快算、月度及扣除台账。其他年度保留。继续？`))return;
-      if(data.version===1){const key=`${KEY}-before-v2-${next.year}`;if(!localStorage.getItem(key))localStorage.setItem(key,JSON.stringify(data));}
-      loadError='';commit(next,'备份已恢复；旧版扣除需分类确认');editDed=null;render();
+      if(data.version===1||data.version===2){const key=`${KEY}-before-v${data.version+1}-${next.year}`;if(!localStorage.getItem(key))localStorage.setItem(key,JSON.stringify(data));}
+      loadError='';commit(next,'备份已恢复；旧版扣除需分类确认');editDed=null;flowStep=1;render();
     }catch(error){toast('导入失败：'+error.message);}
   };
 }
@@ -135,7 +175,7 @@ function action(name){
     download(`薪有数-${state.year}-备份.json`,raw??JSON.stringify({format:'xinyoushu',rules:VERSION,exportedAt:new Date().toISOString(),data:state},null,2),'application/json');return;
   }
   if(name==='oldBackup'){
-    const raw=localStorage.getItem(`${KEY}-before-v2-${state.year}`);
+    const raw=localStorage.getItem(`${KEY}-before-v3-${state.year}`)??localStorage.getItem(`${KEY}-before-v2-${state.year}`);
     if(!raw){toast('本机没有此年度的升级前快照；当前记录仍可导出');return;}
     download(`薪有数-${state.year}-升级前快照.json`,raw,'application/json');return;
   }
@@ -143,7 +183,7 @@ function action(name){
   if(name==='import'){document.querySelector('#importFile').click();return;}
   if(name==='start'){
     if(!leave()||!confirm('清空当前年度记录并建立空白数据？其他年度保留。建议先导出备份。'))return;
-    const next=blank(state.year);next.mode='quick';loadError='';commit(next,'空白年度已建立，未填写不再按0计算');tab='quick';editDed=null;render();return;
+    const next=blank(state.year);next.mode='quick';loadError='';commit(next,'空白年度已建立，未填写不再按0计算');tab='quick';editDed=null;flowStep=1;render();return;
   }
   if(name==='copy'){
     if(dirty){toast('请先保存本月，再复制');return;}

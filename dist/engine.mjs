@@ -1,23 +1,41 @@
 import {deduction,validateDeductions,deductionTotals} from './deductions.mjs';
-export const VERSION='2026.10.21-v2';
+export const VERSION='2026.10.21-v3';
 export const bands=[[3600000,3,0],[14400000,10,252000],[30000000,20,1692000],[42000000,25,3192000],[66000000,30,5292000],[96000000,35,8592000],[Infinity,45,18192000]];
 export const cashKeys=['pension','medical','unemployment','socialOther','fund','fundExtra'];
 export const numKeys=['salary','bonus','overtime','allowance','reduction',...cashKeys,'otherDeduct','after','reimburse','pensionPay'];
 export const quickKeys=['salary','cash','otherDeduct','pensionPay','after','reimburse'];
+export const lawfulKeys=['annuity','health','taxDeferredPension','other'];
+export const contributionDefaults={pensionRate:800,medicalRate:200,unemploymentRate:50,maternityRate:0,injuryRate:0,fundRate:1200};
 export const total=a=>a.reduce((s,x)=>s+x,0);
+export const lawfulDeductions=(seed={})=>Object.fromEntries(lawfulKeys.map(k=>[k,seed[k]??0]));
+export const lawfulTotal=value=>total(lawfulKeys.map(k=>value?.[k]??0));
+export function contributionAmounts(m){
+  const socialBase=m.socialBase??m.salary,fundBase=m.fundBase??m.salary,byRate=rate=>Math.round(socialBase*rate/10000);
+  return {pension:byRate(m.pensionRate),medical:byRate(m.medicalRate),unemployment:byRate(m.unemploymentRate),socialOther:byRate(m.maternityRate)+byRate(m.injuryRate),fund:m.fundEnabled?Math.round(fundBase*m.fundRate/10000):0};
+}
 export function tax(raw){const base=Math.max(0,raw),[,rate,quick]=bands.find(b=>base<=b[0]);return {base,rate,quick,amount:Math.max(0,Math.round(base*rate/100)-quick)};}
 export function bonusTax(amount){const [,rate,quick]=bands.find(b=>amount<=b[0]);return Math.max(0,Math.round(amount*rate/100)-quick/12);}
-export function month(seed={}){return {...Object.fromEntries(numKeys.map(k=>[k,0])),status:'missing',actualTax:null,...seed};}
-export function blank(year=2026){return {version:2,year,selected:0,demo:false,scope:false,mode:'monthly',currentBonusMode:'combined',bonus:0,bonusMonth:12,bonusEligible:false,pensionPlan:0,goal:'cash',deductions:[],migrationNotice:false,quick:{...Object.fromEntries(quickKeys.map(k=>[k,0])),confirmed:false},months:Array.from({length:12},()=>month())};}
-export function demo(){const s=blank();return {...s,selected:9,demo:true,scope:true,bonus:6000000,pensionPlan:1200000,months:Array.from({length:12},()=>month({status:'forecast',salary:2500000,pension:160000,medical:40000,unemployment:10000,fund:240000})),deductions:[deduction({id:'demo-rent',type:'rent',amount:150000,confirmed:true})]};}
+export function month(seed={}){
+  const lawful=lawfulDeductions(seed.lawfulDeductions);
+  return {...Object.fromEntries(numKeys.map(k=>[k,0])),socialBase:null,fundBase:null,fundEnabled:true,...contributionDefaults,lawfulDeductions:lawful,status:'missing',actualTax:null,...seed,lawfulDeductions:lawful};
+}
+export function blank(year=2026){return {version:3,year,selected:0,demo:false,scope:false,mode:'monthly',currentBonusMode:'combined',bonus:0,bonusMonth:12,bonusEligible:false,pensionPlan:0,goal:'cash',deductions:[],migrationNotice:false,quick:{...Object.fromEntries(quickKeys.map(k=>[k,0])),lawfulDeductions:lawfulDeductions(),confirmed:false},months:Array.from({length:12},()=>month())};}
+export function demo(){
+  const s=blank();
+  const make=()=>{const m=month({status:'forecast',salary:2500000,socialBase:2000000,fundBase:2000000});Object.assign(m,contributionAmounts(m));return m;};
+  return {...s,selected:9,demo:true,scope:true,bonus:6000000,pensionPlan:1200000,months:Array.from({length:12},make),deductions:[deduction({id:'demo-rent',type:'rent',amount:150000,confirmed:true})]};
+}
 function amount(x){return Number.isSafeInteger(x)&&x>=0&&x<=10000000000;}
 export function validate(s){
-  if(!s||s.version!==2||![2026,2027].includes(s.year)||!Array.isArray(s.months)||s.months.length!==12)throw Error('备份格式或年度不受支持');
+  if(!s||s.version!==3||![2026,2027].includes(s.year)||!Array.isArray(s.months)||s.months.length!==12)throw Error('备份格式或年度不受支持');
   if(!Number.isInteger(s.selected)||s.selected<0||s.selected>11||!['cash','tax'].includes(s.goal)||!['monthly','quick'].includes(s.mode)||!['combined','separate'].includes(s.currentBonusMode))throw Error('测算设置无效');
   for(const k of ['demo','scope','bonusEligible','migrationNotice'])if(typeof s[k]!=='boolean')throw Error('确认状态无效');
   for(const m of s.months){
     if(!m)throw Error('月份数据缺失');
     for(const k of numKeys)if(!amount(m[k]))throw Error('金额须为非负有效数，单项不超过一亿元');
+    for(const k of Object.keys(contributionDefaults))if(!Number.isSafeInteger(m[k])||m[k]<0||m[k]>10000)throw Error('缴费比例须为0%至100%，最多两位小数');
+    if((m.socialBase!==null&&!amount(m.socialBase))||(m.fundBase!==null&&!amount(m.fundBase))||typeof m.fundEnabled!=='boolean')throw Error('社保或公积金缴费设置无效');
+    validateLawful(m.lawfulDeductions,20000);if(m.otherDeduct!==lawfulTotal(m.lawfulDeductions))throw Error('其他依法扣除分类合计不一致');
     if(m.reduction>m.salary+m.bonus+m.overtime+m.allowance)throw Error('税前工资扣减超过收入');
     if(!['missing','forecast','actual'].includes(m.status)||(m.actualTax!==null&&!amount(m.actualTax)))throw Error('月份状态或实际个税无效');
   }
@@ -26,17 +44,29 @@ export function validate(s){
   if(!Number.isInteger(s.bonusMonth)||s.bonusMonth<1||s.bonusMonth>12)throw Error('奖金月份无效');
   if(!s.quick||typeof s.quick.confirmed!=='boolean')throw Error('年度快算格式无效');
   for(const k of quickKeys)if(!amount(s.quick[k]))throw Error('年度快算金额无效');
+  validateLawful(s.quick.lawfulDeductions,240000);if(s.quick.otherDeduct!==lawfulTotal(s.quick.lawfulDeductions))throw Error('年度依法扣除分类合计不一致');
   if(s.currentBonusMode==='separate'&&!s.bonusEligible)throw Error('基准单独计税需要先确认奖金资格');
   validateDeductions(s.deductions);return s;
 }
+function validateLawful(value,healthCap){
+  if(!value||typeof value!=='object')throw Error('其他依法扣除分类缺失');
+  for(const k of lawfulKeys)if(!amount(value[k]))throw Error('其他依法扣除金额无效');
+  if(value.health>healthCap)throw Error(`符合规定的商业健康保险最多扣除${healthCap/100}元`);
+}
 export function migrate(raw){
-  if(raw?.version===2)return validate(structuredClone(raw));
+  if(raw?.version===3)return validate(structuredClone(raw));
+  if(raw?.version===2){
+    const s=structuredClone(raw);s.version=3;s.migrationNotice=true;
+    s.months=s.months.map(old=>month({...old,lawfulDeductions:lawfulDeductions({other:old.otherDeduct})}));
+    s.quick={...Object.fromEntries(quickKeys.map(k=>[k,0])),...s.quick,lawfulDeductions:lawfulDeductions({other:s.quick?.otherDeduct??0})};
+    return validate(s);
+  }
   if(raw?.version!==1||!Array.isArray(raw.months)||raw.months.length!==12)throw Error('备份版本不受支持');
   const s=blank(raw.year);
   for(const k of ['selected','demo','bonus','bonusMonth','bonusEligible','pensionPlan','goal'])s[k]=raw[k];
   s.migrationNotice=true;s.scope=false;
   s.months=raw.months.map(m=>{
-    const n=month();for(const k of numKeys)n[k]=m[k];n.actualTax=m.actualTax;
+    const n=month();for(const k of numKeys)n[k]=m[k];n.actualTax=m.actualTax;n.lawfulDeductions=lawfulDeductions({other:n.otherDeduct});
     n.status=m.status==='actual'?'actual':numKeys.some(k=>m[k]>0)||m.special>0?'forecast':'missing';return n;
   });
   // Preserve old aggregates but require classification instead of inventing eligibility.

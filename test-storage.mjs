@@ -39,8 +39,15 @@ test('failure on first write does not change either record',()=>{
 test('v1 read keeps a byte-for-byte migration snapshot once',()=>{
   const old={version:1,year:2026,selected:0,demo:false,scope:false,bonus:0,bonusMonth:12,bonusEligible:false,pensionPlan:0,extraDeduct:0,deductConfirmed:false,goal:'cash',months:Array.from({length:12},()=>({...month({status:'forecast'}),special:0}))};
   const raw=JSON.stringify(old),snapshot=`${KEY}-before-v2-2026`,mem=storage({[KEY]:raw});
-  const migrated=readState(mem);assert.equal(migrated.version,2);assert.equal(mem.dump()[snapshot],raw);
+  const migrated=readState(mem);assert.equal(migrated.version,3);assert.equal(mem.dump()[snapshot],raw);
   mem.setItem(KEY,raw);readState(mem);assert.equal(mem.dump()[snapshot],raw);
+});
+
+test('v2 read keeps a byte-for-byte snapshot before v3 classification',()=>{
+  const old=blank();old.version=2;delete old.quick.lawfulDeductions;
+  old.months=old.months.map(m=>{const copy={...m};for(const k of ['socialBase','fundBase','fundEnabled','pensionRate','medicalRate','unemploymentRate','maternityRate','injuryRate','fundRate','lawfulDeductions'])delete copy[k];return copy;});
+  const raw=JSON.stringify(old),snapshot=`${KEY}-before-v3-2026`,mem=storage({[KEY]:raw});
+  const migrated=readState(mem);assert.equal(migrated.version,3);assert.equal(mem.dump()[snapshot],raw);
 });
 
 test('year lookup rejects a mismatched record',()=>{

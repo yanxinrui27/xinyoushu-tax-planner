@@ -4,9 +4,9 @@ export function readState(storage,year){
   const key=year?`${KEY}-${year}`:KEY,raw=storage.getItem(key);
   if(!raw)return null;
   const parsed=JSON.parse(raw),state=migrate(parsed);
-  if(parsed.version===1){
+  if(parsed.version===1||parsed.version===2){
     // Keep a migration snapshot before any later write; never overwrite it.
-    const snapshot=`${KEY}-before-v2-${parsed.year}`;
+    const snapshot=`${KEY}-before-v${parsed.version+1}-${parsed.year}`;
     if(!storage.getItem(snapshot))storage.setItem(snapshot,raw);
   }
   if(year&&state.year!==year)throw Error('年度记录与所选年度不符');
