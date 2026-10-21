@@ -1,31 +1,164 @@
-import {demo,month,calculate,plans,validate,cashKeys,numKeys,VERSION} from './engine.mjs';
-const KEY='xinyoushu-v1';let s=demo(),tab='overview',draft=null;try{const raw=localStorage.getItem(KEY);if(raw)s=validate(JSON.parse(raw));}catch{setTimeout(()=>toast('本地记录读取失败，已载入示例；可在设置页导入备份'),200);}
-const money=n=>(n/100).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});
-const yuan=n=>'¥ '+money(n);const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const names={salary:'基本工资',bonus:'普通月度奖金',overtime:'加班费',allowance:'应税补贴及其他收入',reduction:'税前工资扣减',pension:'个人养老保险',medical:'个人医疗保险',unemployment:'个人失业保险',socialOther:'其他个人社保',fund:'个人住房公积金',fundExtra:'补充公积金（合规可扣部分）',special:'专项附加扣除',otherDeduct:'其他依法扣除',after:'其他税后扣款',reimburse:'非应税报销／到账增加',pensionPay:'个人养老金实际缴费'};
-const icons=['◫','▤','▥','◇','⚙'];const tabs=[['overview','收入总览'],['monthly','月度测算'],['annual','年度记录'],['planning','个税筹划'],['settings','设置与备份']];
-function toast(t){const el=document.querySelector('#toast');el.textContent=t;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',3300);}
-function persist(){validate(s);try{localStorage.setItem(KEY,JSON.stringify(s));return true;}catch{toast('保存失败，请立即导出备份');return false;}}
-function card(label,value,note,dark=false){return `<div class="card ${dark?'dark':''}"><div class="label">${label}</div><div class="big"><small>¥</small>${money(value)}</div><div class="note">${note}</div></div>`;}
-function row(a,b,cls=''){return `<div class="fundrow ${cls}"><span>${a}</span><b>${b}</b></div>`;}
-function field(k,label,value,help=''){return `<div class="field"><label for="${k}">${label} <span class="muted"> / 元</span></label><input id="${k}" name="${k}" type="number" min="0" max="100000000" step="0.01" value="${(value/100).toFixed(2)}" required>${help?`<small>${help}</small>`:''}</div>`;}
-function sum(a){return a.reduce((x,y)=>x+y,0);}
-function foot(){return `<footer class="footer"><span>居民个人 · 同一单位全年工资薪金场景。结果为估算，不替代实际申报。</span><span>本地存储 · 无薪资上传 &nbsp; 规则 ${VERSION}</span></footer>`;}
-function render(){const r=calculate(s);document.querySelector('#app').innerHTML=`<div class="layout"><aside class="sidebar"><div class="brand"><div class="brandicon">≈</div><div><strong>薪有数</strong><small>INCOME, IN PERSPECTIVE</small></div></div><nav class="nav">${tabs.map(([id,n],i)=>`<button data-tab="${id}" class="${tab===id?'active':''}"><span>${icons[i]}</span>${n}</button>`).join('')}</nav><div class="sidefoot"><div class="privacy">◉ 数据仅保存在本机</div>让收入清楚一点<br>让规划从容一点<br><br>个人收入规划工具 / V1.0</div></aside><main><header class="topbar"><div class="crumb">个人工作台 &nbsp; / &nbsp; ${tabs.find(t=>t[0]===tab)[1]}</div><div class="topright"><select id="year" aria-label="纳税年度"><option ${s.year===2026?'selected':''}>2026</option><option ${s.year===2027?'selected':''}>2027</option></select><span class="tag">${s.demo?'示例模式':'本机记录'}</span><div class="avatar">S</div></div></header>${s.demo?`<div class="banner"><span>当前是演示数据，所有月份均为预测。替换为你的数据后再用于决策。</span><button data-action="start">开始我的测算</button></div>`:!s.scope?`<div class="banner"><span>请先在设置中确认适用场景，当前仅提供情景测算。</span><button data-tab="settings">前往确认</button></div>`:''}<div class="heading"><div><h1>${{overview:'看清收入，从容规划',monthly:'每一笔到手，都有明细',annual:'把一整年的收入放在一起',planning:'比较方案，再做选择',settings:'你的数据，由你掌握'}[tab]}</h1><p class="sub">${{overview:`${s.year} 年收入概览 · ${s.months.filter(m=>m.status==='actual').length} 个月已发生，${s.months.filter(m=>m.status==='forecast').length} 个月为预测`,monthly:'记录应发、缴费与扣款，按累计预扣法计算当月个税。',annual:'实际与预测分开标记，修改历史月份后自动重算。',planning:'保持真实收入不变，比较全年税负与可支配现金。',settings:'管理适用范围、年度记录和本地数据备份。'}[tab]}</p></div><div class="actions">${tab==='overview'?'<button data-action="csv">↓ 导出年度明细</button><button class="primary" data-tab="monthly">＋ 录入月度工资</button>':tab==='annual'?'<button data-action="csv">↓ 导出 CSV</button>':''}</div></div>${({overview:overview,monthly:monthly,annual:annual,planning:planning,settings:settings}[tab])(r)}${foot()}</main></div>`;bind();}
-function overview(r){const m=r.rows[s.selected];return `<div class="cards">${card(`${s.selected+1}月预计到手`,m.take,'基准方案 · 奖金并入综合所得',true)}${card('全年预计税前收入',r.gross,'含全年一次性奖金')}${card('全年预计最终个税',r.finalTax,'基准方案 · 含预测月份')}${card('全年预计可支配现金',r.disposable,'按最终税负，扣除个人缴费')}</div><div class="grid"><section class="panel"><div class="panelhead"><h2>全年到手趋势</h2><span class="tag">${s.year} / 基准方案</span></div><div class="chart">${r.rows.map((v,i)=>`<div class="barcol ${i===s.selected?'current':''}"><div class="bartrack"><div class="bar" title="${i+1}月 ${yuan(v.take)}" style="height:${Math.max(1,v.take/Math.max(1,...r.rows.map(x=>x.take))*100)}%"></div></div><span>${i+1}月</span></div>`).join('')}</div><div class="legend"><span><i class="dot"></i>当前查看月份</span><span><i class="dot light"></i>其他月份（含预测）</span></div></section><section class="panel"><div class="panelhead"><h2>${s.selected+1}月资金去向</h2><button class="miniLink" data-tab="monthly">查看明细 ↗</button></div>${[['社','个人社保',sum(['pension','medical','unemployment','socialOther'].map(k=>s.months[s.selected][k]))],['金','住房及补充公积金',s.months[s.selected].fund+s.months[s.selected].fundExtra],['税','当月个税',m.tax],['扣','其他扣款及养老金',s.months[s.selected].after+s.months[s.selected].pensionPay]].map(([mark,n,v])=>`<div class="fundrow"><div class="fundname"><span class="fundmark">${mark}</span>${n}</div><b>${yuan(v)}</b></div>`).join('')}</section></div><div class="grid"><section class="panel"><div class="panelhead"><h2>年度税款与现金概览</h2><span class="tag warn">含预测</span></div>${row('全年预计预缴税款',yuan(r.paid))}${row('预计汇算：'+(r.settlement>=0?'应补税额':'应退税额'),yuan(Math.abs(r.settlement)))}${row('个人社保及公积金合计',yuan(r.cash))}${row('已录入实际扣税合计',yuan(sum(s.months.map(m=>m.status==='actual'?(m.actualTax??0):0))))}<div class="helper">实际扣税合计仅统计你明确填写的金额。汇算差额按本工具支持范围计算，为次年结算事件，不是新增收入。</div></section><section class="panel"><div class="panelhead"><h2>下一步，让规划更完整</h2><span class="tag">收入规划</span></div><h3>奖金怎么计税，更适合你？</h3><p class="sub">比较单独计税与并入综合所得，看到全年税款差异。</p><div class="helper">也可以模拟个人养老金缴费。工具会同时列出少缴的税和新增支出，帮你判断现金是否充足。</div><button class="primary" style="margin-top:18px" data-tab="planning">开始比较方案 →</button></section></div>`;}
-function monthly(r){const m=s.months[s.selected],v=r.rows[s.selected];return `<div class="monthnav">${s.months.map((_,i)=>`<button data-month="${i}" class="${i===s.selected?'active':''}">${i+1}月</button>`).join('')}</div><div class="grid"><section class="panel"><div class="panelhead"><h2>${s.year}年${s.selected+1}月工资录入</h2><span class="tag">金额单位：元</span></div><form id="monthForm"><div class="formgrid"><div class="field"><label for="status">记录状态</label><select id="status" name="status"><option value="forecast" ${m.status==='forecast'?'selected':''}>预计收入</option><option value="actual" ${m.status==='actual'?'selected':''}>已发生收入</option></select></div>${['salary','bonus','overtime','allowance','reduction'].map(k=>field(k,names[k],m[k])).join('')}</div><h3 class="sectiontitle">个人缴费 · 计入实际现金扣款</h3><div class="formgrid">${cashKeys.map(k=>field(k,names[k],m[k])).join('')}</div><p class="sub" style="margin-top:12px">仅填个人承担、符合税前扣除规定的金额。超限缴费现金扣款请列入其他税后扣款。</p><h3 class="sectiontitle">计税扣除 · 不重复扣减到账</h3><div class="formgrid">${['special','otherDeduct'].map(k=>field(k,names[k],m[k])).join('')}${field('pensionPay',names.pensionPay,m.pensionPay,'本工具按缴费当月预扣享受扣除模拟；年内税前扣除上限12000元')}</div><h3 class="sectiontitle">到账调整与实际个税</h3><div class="formgrid">${['after','reimburse'].map(k=>field(k,names[k],m[k])).join('')}<div class="field"><label for="actualTax">实际工资条个税 / 元</label><input id="actualTax" name="actualTax" type="number" min="0" step="0.01" value="${m.actualTax===null?'':(m.actualTax/100).toFixed(2)}" placeholder="选填，留空使用预测"><small>仅在“已发生”状态下替代预计预扣税额</small></div></div><div class="actions" style="margin-top:25px"><button type="submit" class="primary">保存并重新计算</button><button type="button" data-action="copy">沿用本月到后续预测月份</button></div><p class="sub" style="margin-top:14px">保存后更新右侧结果。复制使用已保存数值，不覆盖已发生月份。</p></form></section><aside class="panel resultbox"><span class="tag">${s.selected+1}月 · ${m.status==='actual'?'已发生':'预计'}</span><div class="label" style="margin-top:20px">预计到手金额</div><div class="big">${yuan(v.take)}</div>${row('应税工资收入',yuan(v.gross))}${v.bp?row('全年一次性奖金（并入）',yuan(v.bp)):''}${row('个人社保与公积金',`− ${yuan(v.cash)}`)}${row('个税 '+(m.status==='actual'&&m.actualTax!==null?'（已录实际）':'（预计）'),`− ${yuan(v.tax)}`)}${row('税后扣款',`− ${yuan(m.after)}`)}${row('个人养老金缴费',`− ${yuan(m.pensionPay)}`)}${row('报销及到账增加',`＋ ${yuan(m.reimburse)}`)}<details><summary>展开累计计税过程</summary>${row('累计计税收入',yuan(v.inc))}${row('累计基本减除费用',yuan((s.selected+1)*500000))}${row('累计缴费及其他扣除',yuan(v.ded+v.pensionDed))}${row('累计应纳税所得额',yuan(v.detail.base))}${row('适用税率',v.detail.rate+'%')}${row('速算扣除数',yuan(v.detail.quick))}${row('累计应预扣税额',yuan(v.detail.amount))}${row('截至本月累计已扣税额',yuan(v.cumulativeTax))}</details><div class="helper">${v.take<0?'当前预计到账为负，请核对收入、缴费与扣款。':'本月按基准方案计算。全年一次性奖金资格和不同计税方式请在筹划页比较。'}</div></aside></div>${fundTable()}`;}
-function fundTable(){const keys=[...cashKeys,'tax','after','pensionPay'];const r=calculate(s);const get=(i,k)=>k==='tax'?r.rows[i].tax:s.months[i][k];return `<section class="panel"><div class="panelhead"><h2>${s.selected+1}月扣缴资金去向</h2><span class="tag">累计截至${s.selected+1}月 · 含预测记录</span></div><div class="tablewrap"><table><thead><tr><th>扣缴项目</th><th>当月金额</th><th>年内累计金额</th></tr></thead><tbody>${keys.map(k=>`<tr><td>${k==='tax'?'个人所得税':names[k]}</td><td>${yuan(get(s.selected,k))}</td><td>${yuan(sum(Array.from({length:s.selected+1},(_,i)=>get(i,k))))}</td></tr>`).join('')}<tr><td><b>个人扣缴总额</b></td><td><b>${yuan(sum(keys.map(k=>get(s.selected,k))))}</b></td><td><b>${yuan(sum(keys.flatMap(k=>Array.from({length:s.selected+1},(_,i)=>get(i,k)))))}</b></td></tr></tbody></table></div><p class="sub">专项附加扣除等计税扣除不属于现金扣缴；个人养老金是个人账户缴费，并非单位代扣。实际缴付状态需自行核对。</p></section>`;}
-function annual(r){return `<div class="cards">${card('全年应税收入及奖金',r.gross,'已发生 + 预测',true)}${card('个人社保及公积金',r.cash,'年度个人缴费合计')}${card('全年最终个税',r.finalTax,'基准方案')}${card('预计可支配现金',r.disposable,'已按最终税负计算')}</div><section class="panel"><div class="panelhead"><h2>十二个月，逐笔可查</h2><span class="tag">点击月份编辑</span></div><div class="tablewrap"><table><thead><tr><th>月份</th><th>状态</th><th>工资及奖金</th><th>社保公积金</th><th>当月个税</th><th>累计个税</th><th>预计到手</th></tr></thead><tbody>${r.rows.map((v,i)=>`<tr><td><button class="miniLink" data-month="${i}">${i+1}月 ↗</button></td><td><span class="tag ${s.months[i].status==='forecast'?'warn':''}">${s.months[i].status==='actual'?'已发生':'预测'}</span></td><td>${money(v.gross+v.bp)}</td><td>${money(v.cash)}</td><td>${money(v.tax)}</td><td>${money(v.cumulativeTax)}</td><td><b>${money(v.take)}</b></td></tr>`).join('')}</tbody></table></div><div class="helper">此表使用奖金并入综合所得的基准方案。全年最终个税与全年预扣税款可能不同；汇算差额在次年结算。</div></section>`;}
-function planning(){const list=plans(s);const best=[...list].sort((a,b)=>s.goal==='tax'?a.finalTax-b.finalTax:b.disposable-a.disposable)[0];return `<div class="intro">比较范围：当前录入的全年收入、已确认扣除与可用方案。${s.scope&&!s.demo?'已确认基础适用范围。':'尚未确认基础适用范围，以下仅作假设情景比较。'}收入预测变化时，比较结果会相应变化。</div><section class="panel" style="margin-bottom:22px"><div class="panelhead"><h2>设置比较条件</h2><span class="tag">不修改实际收入记录</span></div><form id="planForm"><div class="formgrid">${field('annualBonus','全年一次性奖金',s.bonus)}<div class="field"><label for="bonusMonth">奖金预计取得月份</label><select id="bonusMonth" name="bonusMonth">${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${s.bonusMonth===i+1?'selected':''}>${i+1}月</option>`).join('')}</select></div>${field('pensionPlan','计划新增个人养老金',s.pensionPlan,'新增缴费预算；系统扣除已有缴费占用的额度')}${field('extraDeduct','全年新增可用扣除',s.extraDeduct,'仅填未计入月度记录且已符合条件的年度扣除')}<div class="field"><label for="goal">优先比较目标</label><select name="goal" id="goal"><option value="cash" ${s.goal==='cash'?'selected':''}>全年可支配现金较高</option><option value="tax" ${s.goal==='tax'?'selected':''}>全年最终个税较低</option></select></div></div><label class="check"><input name="bonusEligible" type="checkbox" ${s.bonusEligible?'checked':''}>我确认该奖金符合全年一次性奖金政策，当年未对其他奖金使用单独计税，且取得年度处于政策有效期内。</label><label class="check"><input name="deductConfirmed" type="checkbox" ${s.deductConfirmed?'checked':''}>我确认新增扣除符合条件、未重复计入，并已核对额度及互斥关系。此项仅影响年度汇算情景，不追溯修改工资预扣。</label><button class="primary" type="submit">更新比较方案</button></form></section><section class="panel" style="margin-bottom:22px"><div class="panelhead"><h2>方案对比</h2><span class="tag">${s.goal==='tax'?'按全年税款排序':'按可支配现金排序'}</span></div><div class="planGrid">${[...list].sort((a,b)=>s.goal==='tax'?a.finalTax-b.finalTax:b.disposable-a.disposable).map(p=>`<article class="planCard ${p.id===best.id?'best':''}"><div class="panelhead" style="margin-bottom:13px"><h3 style="margin:0">${p.name}</h3>${p.id===best.id?'<span class="tag">当前目标较优</span>':''}</div><div class="label">全年最终个税</div><div class="big">${yuan(p.finalTax)}</div>${row('相比基准少缴税',yuan(p.saving))}${row('新增现金支出',yuan(p.addedPension))}${row('新增受限资金',yuan(p.addedPension))}${row('全年可支配现金',yuan(p.disposable))}<p>${p.mode==='separate'?'奖金按单独计税情景。':'奖金并入综合所得。'}${p.extra?'含补充年度扣除。':''}${p.addedPension?'缴费减少当年可用现金，不代表投资收益。':''}</p></article>`).join('')}</div><div class="helper">仅在当前输入和已支持方案中比较，不代表所有筹划方式的全局最优。新增支出与受限资金可能是同一笔钱，现金计算只扣一次。个人养老金未来领取税负及投资回报未计入。</div></section>${deductionGuide()}${policies()}`;}
-function deductionGuide(){return `<section class="panel" style="margin-bottom:22px"><div class="panelhead"><h2>扣除自查清单</h2><span class="tag warn">请自行核对资格 · 不自动加入方案</span></div><div class="checklist">${[['养育与教育','婴幼儿照护、子女教育：现行标准每孩每月2000元，需核对年龄、学籍、月份和父母分配；同一孩子同一月份不重复计入。'],['住房支出','住房租金或首套住房贷款利息：需核对城市、住房条件、夫妻分配及互斥关系。'],['赡养老人','现行标准每月3000元；非独生子女需分摊，每人每月不超过1500元，需核对被赡养人条件。'],['继续教育与大病医疗','继续教育需核对类型和期限；大病医疗按适用条件及限额在年度汇算扣除，不直接套入月度预扣。']].map(([a,b])=>`<div class="checkitem"><b>${a}</b><span class="muted">${b}</span></div>`).join('')}</div><p class="sub" style="margin-top:15px">清单仅作提示，不构成完整资格判断。已计入每月“专项附加扣除”的金额，不要再次填入“全年新增可用扣除”。</p></section>`;}
-function policies(){return `<section class="panel"><div class="panelhead"><h2>政策依据与计算范围</h2><span class="tag">核对日期：2026-10-21</span></div><div class="policylist"><a target="_blank" rel="noopener" href="https://shanghai.chinatax.gov.cn/zcfw/zcjd/201812/t443220.html">累计预扣法与居民工资薪金预扣率表 ↗</a><a target="_blank" rel="noopener" href="https://fgk.chinatax.gov.cn/zcfgk/c102416/c5211524/content.html">全年一次性奖金政策：现行执行至2027年12月31日 ↗</a><a target="_blank" rel="noopener" href="https://fgk.chinatax.gov.cn/zcfgk/c102416/c5237110/content.html">个人养老金：符合条件缴费年度扣除限额12000元，领取另有税务规则 ↗</a><a target="_blank" rel="noopener" href="https://fgk.chinatax.gov.cn/zcfgk/c100012/c5213592/content.html">婴幼儿照护、子女教育及赡养老人扣除标准调整 ↗</a><a target="_blank" rel="noopener" href="https://www.chinatax.gov.cn/chinatax/n810219/n810744/n3752930/n3752974/c3963375/content.html">专项附加扣除暂行办法（标准调整需结合后续通知） ↗</a></div><div class="helper">当前支持2026、2027年度一般工资薪金测算。暂不支持换工作、多单位、特殊预扣优惠、减免税、劳务报酬、境外及经营所得；也不自动判断低收入免办汇算等例外。</div></section>`;}
-function settings(){return `<section class="panel" style="margin-bottom:22px"><div class="panelhead"><h2>适用范围确认</h2><span class="tag">${s.year}年度</span></div><label class="check"><input id="scope" type="checkbox" ${s.scope?'checked':''}>我是中国内地居民个人，本年度从1月开始在同一单位任职，测算仅涉及普通工资薪金及符合条件的全年一次性奖金；不涉及产品未支持的收入与优惠。</label><div class="helper">首版通过逐月录入完整年度数据计算。年中开始使用时，请补录1月至当前月份，不以缺失记录代替真实的0收入。</div></section><section class="panel" style="margin-bottom:22px"><div class="panelhead"><h2>本机数据管理</h2><span class="tag">无需登录 · 无云端同步</span></div><p class="sub">记录仅保存在当前浏览器。清理浏览器数据、使用无痕模式或更换设备可能导致记录不可用。建议定期导出备份。</p><div class="actions" style="margin-top:22px"><button class="primary" data-action="backup">↓ 导出完整备份</button><button data-action="import">↑ 导入备份</button><button data-action="csv">导出年度 CSV</button><button data-action="start">清空并重新开始</button></div><input type="file" id="importFile" accept="application/json,.json" hidden><div class="helper">每个年度独立保存。导入将替换备份对应年度的数据，导入前会请求确认。示例数据不会自动写入，保存修改后才会成为本机记录。</div></section>${policies()}`;}
-function download(name,data,type){const a=document.createElement('a');const u=URL.createObjectURL(new Blob([data],{type}));a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
-function leave(){if(draft&&!confirm('当前有未保存输入，放弃修改并继续？'))return false;draft=null;return true;}
-function bind(){document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(!leave())return;tab=b.dataset.tab;render();window.scrollTo(0,0);});document.querySelectorAll('[data-month]').forEach(b=>b.onclick=()=>{if(!leave())return;s.selected=Number(b.dataset.month);tab='monthly';render();});document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>action(b.dataset.action));document.querySelector('#year').onchange=e=>{if(!leave()){e.target.value=s.year;return;}try{const y=Number(e.target.value),raw=localStorage.getItem(KEY+'-'+y);s=raw?validate(JSON.parse(raw)):Object.assign(demo(),{year:y});draft=null;render();}catch{toast('该年度记录读取失败');}};
-const mf=document.querySelector('#monthForm');if(mf){mf.oninput=()=>draft=true;mf.onsubmit=e=>{e.preventDefault();try{const fd=new FormData(mf),m=month();for(const k of numKeys)m[k]=Math.round(Number(fd.get(k))*100);m.status=fd.get('status');m.actualTax=fd.get('actualTax')===''?null:Math.round(Number(fd.get('actualTax'))*100);const next=structuredClone(s);next.months[s.selected]=m;validate(next);s=next;draft=null;save();render();toast('已保存，后续月份已重新计算');}catch(err){toast(err.message);}};}
-const pf=document.querySelector('#planForm');if(pf){pf.oninput=()=>draft=true;pf.onsubmit=e=>{e.preventDefault();try{const fd=new FormData(pf),next=structuredClone(s);for(const [a,b]of [['annualBonus','bonus'],['pensionPlan','pensionPlan'],['extraDeduct','extraDeduct']])next[b]=Math.round(Number(fd.get(a))*100);next.bonusMonth=Number(fd.get('bonusMonth'));next.goal=fd.get('goal');next.bonusEligible=fd.has('bonusEligible');next.deductConfirmed=fd.has('deductConfirmed');validate(next);s=next;draft=null;save();render();toast('方案比较已更新');}catch(err){toast(err.message);}};}
-const sc=document.querySelector('#scope');if(sc)sc.onchange=()=>{s.scope=sc.checked;save();toast('适用范围已更新');};const fi=document.querySelector('#importFile');if(fi)fi.onchange=async()=>{try{if(!fi.files[0])return;const txt=await fi.files[0].text();if(txt.length>2000000)throw Error('备份文件过大');const pack=JSON.parse(txt),data=validate(pack.data??pack);if(!confirm(`导入${data.year}年度的12个月记录，将替换该年度本机数据。继续？`))return;s=data;draft=null;save();render();toast('备份已恢复并重新计算');}catch(err){toast('导入失败：'+err.message);}};}
-function save(){persist();try{localStorage.setItem(KEY+'-'+s.year,JSON.stringify(s));}catch{toast('年度记录保存失败，请导出备份');}}
-function action(a){if(a==='backup'){download(`薪有数-${s.year}-备份.json`,JSON.stringify({format:'xinyoushu',rules:VERSION,exportedAt:new Date().toISOString(),data:s},null,2),'application/json');return;}if(a==='csv'){const r=calculate(s),keys=[...cashKeys,'after','pensionPay'];let cum=Object.fromEntries(keys.map(k=>[k,0]));const lines=[['月份','状态','工资及奖金','社保公积金','当月个税','累计个税','预计到手',...keys.flatMap(k=>[names[k],names[k]+'累计'])],...r.rows.map((v,i)=>{const m=s.months[i];return [i+1,m.status==='actual'?'已发生':'预测',(v.gross+v.bp)/100,v.cash/100,v.tax/100,v.cumulativeTax/100,v.take/100,...keys.flatMap(k=>{cum[k]+=m[k];return [m[k]/100,cum[k]/100];})];})];download(`薪有数-${s.year}-年度明细.csv`,'\ufeff'+lines.map(x=>x.join(',')).join('\r\n'),'text/csv;charset=utf-8');toast('年度明细已导出');return;}if(a==='import'){document.querySelector('#importFile').click();return;}if(a==='start'){if(!confirm('清空当前年度记录并开始填写？其他年度保留。建议先导出备份。'))return;const year=s.year;s={...demo(),year,demo:false,scope:false,bonus:0,pensionPlan:0,selected:0,months:Array.from({length:12},()=>month())};draft=null;save();tab='monthly';render();toast('已建立空白年度，所有月份暂标为预测，请逐月填写');return;}if(a==='copy'){if(draft){toast('请先保存当前月份，再复制');return;}if(!confirm('把本月已保存的收入和缴费复制到后续“预测”月份？已发生月份保持原值。'))return;const m=s.months[s.selected];for(let i=s.selected+1;i<12;i++)if(s.months[i].status==='forecast')s.months[i]={...m,status:'forecast',actualTax:null};save();render();toast('后续预测月份已更新');}}
-window.addEventListener('beforeunload',e=>{if(draft){e.preventDefault();e.returnValue='';}});render();
+import {blank,demo,month,migrate,validate,calculate,numKeys,quickKeys,cashKeys,total,VERSION} from './engine.mjs';
+import {deduction,TYPES} from './deductions.mjs';
+import {KEY,initialState,readState,writeState} from './storage.mjs';
+import {page,names,labels} from './ui.mjs';
+
+let state=demo(),tab='overview',dirty=false,editDed=null,loadError='';
+try{state=initialState(localStorage);}catch(error){loadError=`本机记录未加载：${error.message}。原始数据未覆盖，可到设置页导出备份。`;}
+const app=document.querySelector('#app');
+function toast(message){
+  const el=document.querySelector('#toast');el.textContent=message;el.style.display='block';
+  clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',4200);
+}
+function render(){app.innerHTML=page(state,tab,editDed);bind();}
+function leave(){if(dirty&&!confirm('当前有未保存输入，放弃修改并继续？'))return false;dirty=false;return true;}
+function commit(next,message){
+  validate(next);if(loadError)throw Error('原始记录加载失败，先导出原始记录或导入有效备份，再修改数据。');
+  writeState(localStorage,next);state=next;dirty=false;if(message)toast(message);
+}
+function attempt(fn){try{fn();}catch(error){toast(error.message);}}
+function cents(value){
+  if(!/^\d+(?:\.\d{1,2})?$/.test(String(value)))throw Error('金额需为非负数，最多保留两位小数');
+  return Math.round(Number(value)*100);
+}
+function go(next){
+  if(!leave())return;
+  if(next==='monthly')state.mode='monthly';
+  if(next==='quick')state.mode='quick';
+  tab=next;editDed=null;render();window.scrollTo(0,0);
+}
+function submitForm(id,handler){
+  const form=document.querySelector('#'+id);if(!form)return;
+  form.oninput=()=>dirty=true;
+  form.onsubmit=e=>{e.preventDefault();attempt(()=>handler(new FormData(form),form));};
+}
+function bind(){
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>go(b.dataset.tab));
+  document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{
+    if(!leave())return;state.mode=b.dataset.mode;tab=state.mode==='quick'?'quick':'monthly';editDed=null;render();
+  });
+  document.querySelectorAll('[data-month]').forEach(b=>b.onclick=()=>{if(!leave())return;state.selected=Number(b.dataset.month);state.mode='monthly';tab='monthly';render();});
+  document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>attempt(()=>action(b.dataset.action)));
+  document.querySelector('#year').onchange=e=>attempt(()=>{
+    if(!leave()){e.target.value=state.year;return;}
+    const y=Number(e.target.value);state=readState(localStorage,y)??blank(y);tab='overview';editDed=null;render();
+  });
+  submitForm('monthForm',fd=>{
+    const next=structuredClone(state),m=month();
+    for(const k of numKeys)m[k]=cents(fd.get(k));
+    m.status=fd.get('status');m.actualTax=fd.get('actualTax')===''?null:cents(fd.get('actualTax'));
+    next.months[next.selected]=m;commit(next,'已保存；相关月份与年度方案已重算');render();
+  });
+  submitForm('quickForm',fd=>{
+    const next=structuredClone(state);
+    for(const k of quickKeys)next.quick[k]=cents(fd.get('q_'+k));
+    next.quick.confirmed=fd.has('quickConfirmed');next.mode='quick';
+    commit(next,next.quick.confirmed?'年度输入已确认，未改动月度记录':'已保存草稿，确认完整输入后才能推荐');render();
+  });
+  submitForm('planForm',fd=>{
+    const next=structuredClone(state);next.bonus=cents(fd.get('annualBonus'));next.pensionPlan=cents(fd.get('pensionPlan'));
+    next.bonusMonth=Number(fd.get('bonusMonth'));next.goal=fd.get('goal');next.bonusEligible=fd.has('bonusEligible');
+    next.currentBonusMode=next.bonusEligible?fd.get('currentBonusMode'):'combined';
+    commit(next,'奖金、预算及所有可用组合已更新');render();
+  });
+  const scope=document.querySelector('#scope');
+  if(scope)scope.onchange=()=>attempt(()=>{const next=structuredClone(state);next.scope=scope.checked;commit(next,'适用范围已保存');render();});
+  bindDeductions();bindImport();
+}
+function readDed(fd){
+  const d={...editDed,type:fd.get('d_type'),person:fd.get('d_person').trim(),amount:cents(fd.get('d_amount')),usage:fd.get('d_usage'),timing:fd.get('d_timing'),confirmed:fd.has('d_confirmed')};
+  if(fd.has('d_start'))d.start=Number(fd.get('d_start'));
+  if(fd.has('d_end'))d.end=Number(fd.get('d_end'));
+  if(fd.has('d_share'))d.share=Number(fd.get('d_share'));
+  if(fd.has('d_rentTier'))d.rentTier=Number(fd.get('d_rentTier'));
+  if(fd.has('d_sole'))d.sole=fd.get('d_sole')==='yes';
+  return d;
+}
+function bindDeductions(){
+  document.querySelectorAll('[data-edit-ded]').forEach(b=>b.onclick=()=>{
+    if(!leave())return;editDed=structuredClone(state.deductions.find(d=>d.id===b.dataset.editDed));render();document.querySelector('#dedForm').scrollIntoView({block:'start',behavior:'smooth'});
+  });
+  document.querySelectorAll('[data-delete-ded]').forEach(b=>b.onclick=()=>attempt(()=>{
+    if(!leave()||!confirm('删除此扣除项目并重新计算？可用事先导出的备份恢复。'))return;
+    const next=structuredClone(state);next.deductions=next.deductions.filter(d=>d.id!==b.dataset.deleteDed);commit(next,'扣除项目已移除');editDed=null;render();
+  }));
+  submitForm('dedForm',fd=>{
+    const d=readDed(fd),next=structuredClone(state),index=next.deductions.findIndex(x=>x.id===d.id);
+    if(index===-1)next.deductions.push(d);else next.deductions[index]=d;
+    commit(next,'项目已保存，额度及重复校验通过');editDed=null;render();
+  });
+  const form=document.querySelector('#dedForm');if(!form)return;
+  for(const id of ['d_type','d_usage','d_timing'])document.querySelector('#'+id).onchange=()=>attempt(()=>{
+    const next=readDed(new FormData(form));
+    if(TYPES[next.type].annual||next.usage==='proposed')next.timing='annual';
+    if(id==='d_type')next.confirmed=false;
+    editDed=next;dirty=true;const y=window.scrollY;render();window.scrollTo(0,y);
+  });
+}
+function bindImport(){
+  const input=document.querySelector('#importFile');if(!input)return;
+  input.onchange=async()=>{
+    try{
+      const file=input.files[0];if(!file)return;
+      if(file.size>2000000)throw Error('备份文件超过2MB');
+      const raw=await file.text(),pack=JSON.parse(raw),data=pack.data??pack;
+      if(pack.rules&&pack.rules!==VERSION&&data.version===2)throw Error('规则版本不匹配，请使用对应版本工具核对后导入');
+      const next=migrate(data);
+      if(!confirm(`导入${next.year}年度记录，将替换该年度快算、月度及扣除台账。其他年度保留。继续？`))return;
+      if(data.version===1){const key=`${KEY}-before-v2-${next.year}`;if(!localStorage.getItem(key))localStorage.setItem(key,JSON.stringify(data));}
+      loadError='';commit(next,'备份已恢复；旧版扣除需分类确认');editDed=null;render();
+    }catch(error){toast('导入失败：'+error.message);}
+  };
+}
+function download(name,content,type){
+  const a=document.createElement('a'),url=URL.createObjectURL(new Blob([content],{type}));a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function csvCell(value){const text=String(value??'');return '"'+text.replaceAll('"','""')+'"';}
+function exportCSV(){
+  const r=calculate(state),lines=[];
+  if(state.mode==='quick'){
+    lines.push(['年度','模式','数据完整','税前收入含奖金','个人社保公积金','最终个税','可支配现金'],[state.year,'年度快算',r.complete?'是':'否',r.gross/100,r.cash/100,r.finalTax===null?'待补齐':r.finalTax/100,r.disposable===null?'待补齐':r.disposable/100]);
+  }else{
+    const keys=[...cashKeys,'after','pensionPay'],cum=Object.fromEntries(keys.map(k=>[k,0]));let prefix=true;
+    lines.push(['月份','状态','工资及奖金','社保公积金','普通工资个税','奖金单独计税','累计普通工资税','预计到手',...keys.flatMap(k=>[names[k],names[k]+'累计'])]);
+    r.rows.forEach((v,i)=>{
+      const m=state.months[i],present=m.status!=='missing';prefix=prefix&&present;
+      const amount=x=>x===null?'待补齐':x/100;
+      lines.push([i+1,labels[m.status],present?(v.gross+v.bp)/100:'未填写',present?v.cash/100:'未填写',amount(v.tax),v.valid?v.bonusTax/100:'待补齐',amount(v.cumulativeTax),amount(v.take),...keys.flatMap(k=>{if(present)cum[k]+=m[k];return [present?m[k]/100:'未填写',prefix?cum[k]/100:'待补齐'];})]);
+    });
+  }
+  download(`薪有数-${state.year}-${state.mode==='quick'?'年度快算':'月度明细'}.csv`,'\ufeff'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n'),'text/csv;charset=utf-8');toast('当前模式明细已导出');
+}
+function action(name){
+  if(name==='backup'){
+    const raw=loadError?localStorage.getItem(KEY):null;
+    download(`薪有数-${state.year}-备份.json`,raw??JSON.stringify({format:'xinyoushu',rules:VERSION,exportedAt:new Date().toISOString(),data:state},null,2),'application/json');return;
+  }
+  if(name==='oldBackup'){
+    const raw=localStorage.getItem(`${KEY}-before-v2-${state.year}`);
+    if(!raw){toast('本机没有此年度的升级前快照；当前记录仍可导出');return;}
+    download(`薪有数-${state.year}-升级前快照.json`,raw,'application/json');return;
+  }
+  if(name==='csv'){exportCSV();return;}
+  if(name==='import'){document.querySelector('#importFile').click();return;}
+  if(name==='start'){
+    if(!leave()||!confirm('清空当前年度记录并建立空白数据？其他年度保留。建议先导出备份。'))return;
+    const next=blank(state.year);next.mode='quick';loadError='';commit(next,'空白年度已建立，未填写不再按0计算');tab='quick';editDed=null;render();return;
+  }
+  if(name==='copy'){
+    if(dirty){toast('请先保存本月，再复制');return;}
+    const m=state.months[state.selected];if(m.status==='missing'){toast('本月尚未保存，不能复制');return;}
+    if(!confirm('使用本月已保存的收入、缴费及调整，覆盖后续预测和未填月份？不覆盖已发生月份，实际税额不复制。'))return;
+    const next=structuredClone(state);
+    for(let i=next.selected+1;i<12;i++)if(next.months[i].status!=='actual')next.months[i]={...m,status:'forecast',actualTax:null};
+    commit(next,'后续预测已更新；扣除仍由独立台账按月份计算');render();return;
+  }
+  if(name==='markMissing'){
+    if(!leave()||!confirm('将本月标为未填写？金额会保留，但不纳入完整年度计算。'))return;
+    const next=structuredClone(state);next.months[next.selected].status='missing';commit(next,'本月已标为未填写');render();return;
+  }
+  if(name==='addDed'){if(!leave())return;editDed=deduction();tab='deductions';render();document.querySelector('#dedForm').scrollIntoView({block:'start',behavior:'smooth'});return;}
+  if(name==='cancelDed'){if(!leave())return;editDed=null;render();}
+}
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+render();if(loadError)setTimeout(()=>toast(loadError),100);

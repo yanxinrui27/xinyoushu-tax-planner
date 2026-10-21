@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import {blank,month,calculate,plans,migrate,validate,bonusCurve,quickCalculate} from './dist/engine.mjs';
+import {deduction,validateDeductions,deductionTotals} from './dist/deductions.mjs';
+let passed=0;
+function test(n,fn){fn();passed++;console.log('PASS '+n);}
+function state(){const s=blank();s.scope=true;s.months=Array.from({length:12},()=>month({status:'forecast',salary:2500000}));return s;}
+test('missing month blocks annual and downstream withholding',()=>{const s=state();s.months[2]=month();const r=calculate(s);assert.equal(r.finalTax,null);assert.equal(r.rows[1].valid,true);assert.equal(r.rows[3].valid,false);assert.equal(plans(s).length,0);});
+test('explicit zero is valid',()=>{const s=state();s.months[2]=month({status:'forecast'});assert.equal(calculate(s).complete,true);});
+test('all eight supported combinations including separate+deduction without pension',()=>{const s=state();s.bonus=6000000;s.bonusEligible=true;s.pensionPlan=1200000;s.deductions=[deduction({type:'education',amount:40000,usage:'proposed',timing:'annual',confirmed:true})];const p=plans(s);assert.equal(p.length,8);assert(p.some(x=>x.mode==='separate'&&x.extra>0&&x.addedPension===0));});
+test('equivalent zero options deduplicated',()=>{const s=state();s.bonusEligible=true;s.pensionPlan=0;assert.equal(plans(s).length,1);});
+test('scope must be confirmed before ranking',()=>{const s=state();s.scope=false;assert.equal(plans(s).length,0);});
+test('pending baseline deduction blocks results, pending proposed is excluded',()=>{const s=state();s.deductions=[deduction({type:'education',amount:40000})];assert.equal(calculate(s).complete,false);s.deductions[0].usage='proposed';s.deductions[0].timing='annual';assert.equal(plans(s).length,1);});
+test('annual-only deduction does not affect payroll withholding',()=>{const s=state();const before=calculate(s);s.deductions=[deduction({type:'education',amount:40000,timing:'annual',confirmed:true})];const r=calculate(s);assert.equal(r.rows[0].tax,before.rows[0].tax);assert(r.finalTax<before.finalTax);});
+test('medical limited to annual excess capped at 80000',()=>{const d=deduction({type:'medical',amount:10000000,timing:'annual',confirmed:true});assert.equal(deductionTotals([d]).baseline,8000000);assert.throws(()=>validateDeductions([{...d,timing:'withholding'}]));});
+test('housing is mutually exclusive even across different months',()=>{assert.throws(()=>validateDeductions([deduction({type:'rent',amount:150000,end:6,confirmed:true}),deduction({type:'loan',amount:100000,start:7,confirmed:true})]));});
+test('same beneficiary baby and child overlap blocked',()=>{assert.throws(()=>validateDeductions([deduction({type:'baby',amount:200000,person:'孩子A',confirmed:true}),deduction({type:'child',amount:200000,person:'孩子A',confirmed:true})]));});
+test('deduction caps and duplicate validation',()=>{assert.throws(()=>validateDeductions([deduction({type:'education',amount:40100,confirmed:true})]));const d=deduction({type:'education',amount:40000,confirmed:true});assert.throws(()=>validateDeductions([d,{...d,id:'second'}]));});
+test('v1 zero becomes missing and unclassified deductions preserved',()=>{const old={version:1,year:2026,selected:0,demo:false,scope:true,bonus:0,bonusMonth:12,bonusEligible:false,pensionPlan:0,extraDeduct:100000,deductConfirmed:true,goal:'cash',months:Array.from({length:12},()=>({...month({status:'forecast'}),special:0}))};old.months[0].salary=1000000;old.months[0].special=150000;const s=migrate(old);assert.equal(s.months[1].status,'missing');assert(s.deductions.some(d=>d.type==='legacy'&&d.amount===150000));assert.equal(s.scope,false);assert.equal(calculate(s).complete,false);});
+test('quick annual inputs never populate monthly records',()=>{const s=blank();s.quick={salary:30000000,cash:0,otherDeduct:0,pensionPay:0,after:0,reimburse:0,confirmed:true};s.mode='quick';assert.equal(quickCalculate(s).gross,30000000);assert(s.months.every(m=>m.status==='missing'));assert.equal(quickCalculate(s).rows.length,0);});
+test('bonus cliff is sampled on both sides at cent precision',()=>{const curve=bonusCurve(3600000);assert(curve.points.some(p=>p.amount===3600001));const at=curve.points.find(p=>p.amount===3600000),over=curve.points.find(p=>p.amount===3600001);assert(over.net<at.net);});
+test('malformed import rejected and v2 roundtrip stable',()=>{const s=state();assert.deepEqual(validate(JSON.parse(JSON.stringify(s))),s);s.months[0].salary=-1;assert.throws(()=>validate(s));});
+console.log(`${passed} P0/P1 tests passed`);
