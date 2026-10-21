@@ -56,3 +56,13 @@ export function deductionTotals(ds) {
   }
   return out;
 }
+export function deductionTotalsThrough(ds,endMonth) {
+  if(!Number.isInteger(endMonth)||endMonth<1||endMonth>12)throw Error('汇总截止月份无效');
+  const out=deductionTotals(ds),totals={baseline:0,proposed:0};
+  for(const d of ds){
+    if(!d.confirmed||d.type==='legacy')continue;
+    const value=TYPES[d.type].annual?deductionValue(d):d.amount*Math.max(0,Math.min(d.end,endMonth)-d.start+1);
+    totals[d.usage]+=value;
+  }
+  return {...out,...totals};
+}

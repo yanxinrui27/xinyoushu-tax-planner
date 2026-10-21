@@ -1,5 +1,5 @@
-import {deduction,validateDeductions,deductionTotals} from './deductions.mjs';
-export const VERSION='2026.10.21-v3';
+import {deduction,validateDeductions,deductionTotals,deductionTotalsThrough} from './deductions.mjs';
+export const VERSION='2026.10.21-v4';
 export const bands=[[3600000,3,0],[14400000,10,252000],[30000000,20,1692000],[42000000,25,3192000],[66000000,30,5292000],[96000000,35,8592000],[Infinity,45,18192000]];
 export const cashKeys=['pension','medical','unemployment','socialOther','fund','fundExtra'];
 export const numKeys=['salary','bonus','overtime','allowance','reduction',...cashKeys,'otherDeduct','after','reimburse','pensionPay'];
@@ -19,7 +19,10 @@ export function month(seed={}){
   const lawful=lawfulDeductions(seed.lawfulDeductions);
   return {...Object.fromEntries(numKeys.map(k=>[k,0])),socialBase:null,fundBase:null,fundEnabled:true,...contributionDefaults,lawfulDeductions:lawful,status:'missing',actualTax:null,...seed,lawfulDeductions:lawful};
 }
-export function blank(year=2026){return {version:3,year,selected:0,demo:false,scope:false,mode:'monthly',currentBonusMode:'combined',bonus:0,bonusMonth:12,bonusEligible:false,pensionPlan:0,goal:'cash',deductions:[],migrationNotice:false,quick:{...Object.fromEntries(quickKeys.map(k=>[k,0])),lawfulDeductions:lawfulDeductions(),confirmed:false},months:Array.from({length:12},()=>month())};}
+export function defaultThroughMonth(year,now=new Date()){
+  return year<now.getFullYear()?12:year>now.getFullYear()?1:now.getMonth()+1;
+}
+export function blank(year=2026){return {version:3,year,selected:0,demo:false,scope:false,mode:'monthly',currentBonusMode:'combined',bonus:0,bonusMonth:12,bonusEligible:false,pensionPlan:0,goal:'cash',deductions:[],migrationNotice:false,quick:{...Object.fromEntries(quickKeys.map(k=>[k,0])),lawfulDeductions:lawfulDeductions(),source:'monthly',throughMonth:defaultThroughMonth(year),confirmed:false},months:Array.from({length:12},()=>month())};}
 export function demo(){
   const s=blank();
   const make=()=>{const m=month({status:'forecast',salary:2500000,socialBase:2000000,fundBase:2000000});Object.assign(m,contributionAmounts(m));return m;};
@@ -42,7 +45,7 @@ export function validate(s){
   for(const k of ['bonus','pensionPlan'])if(!amount(s[k]))throw Error('方案金额无效');
   if(s.pensionPlan>1200000)throw Error('新增养老金预算不得超过12000元');
   if(!Number.isInteger(s.bonusMonth)||s.bonusMonth<1||s.bonusMonth>12)throw Error('奖金月份无效');
-  if(!s.quick||typeof s.quick.confirmed!=='boolean')throw Error('年度快算格式无效');
+  if(!s.quick||typeof s.quick.confirmed!=='boolean'||!['monthly','manual'].includes(s.quick.source)||!Number.isInteger(s.quick.throughMonth)||s.quick.throughMonth<1||s.quick.throughMonth>12)throw Error('年度快算格式无效');
   for(const k of quickKeys)if(!amount(s.quick[k]))throw Error('年度快算金额无效');
   validateLawful(s.quick.lawfulDeductions,240000);if(s.quick.otherDeduct!==lawfulTotal(s.quick.lawfulDeductions))throw Error('年度依法扣除分类合计不一致');
   if(s.currentBonusMode==='separate'&&!s.bonusEligible)throw Error('基准单独计税需要先确认奖金资格');
@@ -54,11 +57,15 @@ function validateLawful(value,healthCap){
   if(value.health>healthCap)throw Error(`符合规定的商业健康保险最多扣除${healthCap/100}元`);
 }
 export function migrate(raw){
-  if(raw?.version===3)return validate(structuredClone(raw));
+  if(raw?.version===3){
+    const s=structuredClone(raw);
+    if(s.quick){s.quick.source??=s.quick.confirmed?'manual':'monthly';s.quick.throughMonth??=defaultThroughMonth(s.year);}
+    return validate(s);
+  }
   if(raw?.version===2){
     const s=structuredClone(raw);s.version=3;s.migrationNotice=true;
     s.months=s.months.map(old=>month({...old,lawfulDeductions:lawfulDeductions({other:old.otherDeduct})}));
-    s.quick={...Object.fromEntries(quickKeys.map(k=>[k,0])),...s.quick,lawfulDeductions:lawfulDeductions({other:s.quick?.otherDeduct??0})};
+    s.quick={...Object.fromEntries(quickKeys.map(k=>[k,0])),...s.quick,source:s.quick?.confirmed?'manual':'monthly',throughMonth:defaultThroughMonth(s.year),lawfulDeductions:lawfulDeductions({other:s.quick?.otherDeduct??0})};
     return validate(s);
   }
   if(raw?.version!==1||!Array.isArray(raw.months)||raw.months.length!==12)throw Error('备份版本不受支持');
@@ -80,29 +87,39 @@ export function migrate(raw){
   return validate(s);
 }
 export function coverage(s){
-  const d=deductionTotals(s.deductions),missing=s.mode==='monthly'?s.months.flatMap((m,i)=>m.status==='missing'?[i+1]:[]):[];
-  const inputComplete=s.mode==='quick'?s.quick.confirmed:missing.length===0;
+  const d=deductionTotals(s.deductions),quickMonthly=s.mode==='quick'&&s.quick.source==='monthly';
+  const limit=s.mode==='monthly'?12:quickMonthly?s.quick.throughMonth:0;
+  const missing=limit?s.months.slice(0,limit).flatMap((m,i)=>m.status==='missing'?[i+1]:[]):[];
+  const inputComplete=s.mode==='quick'?s.quick.confirmed&&(!quickMonthly||missing.length===0):missing.length===0;
   const complete=inputComplete&&d.pendingBaseline===0;
   return {complete,missing,pendingBaseline:d.pendingBaseline,pendingProposed:d.pendingProposed,recommendable:complete&&s.scope&&!s.demo};
 }
 function annualResult(s,inputs,opts,d,rows){
-  const {gross,cash,other,pensionActual,after,reimburse,paid}=inputs;
+  const {gross,cash,other,pensionActual,after,reimburse,paid}=inputs,bonusAmount=inputs.bonusAmount??s.bonus;
   const mode=opts.mode??s.currentBonusMode,extra=opts.extra??0,pension=opts.pension??0;
   if(mode==='separate'&&!s.bonusEligible)throw Error('请确认全年一次性奖金适用条件');
   if(!['combined','separate'].includes(mode)||!amount(extra)||!amount(pension)||extra>d.proposed||pension>s.pensionPlan)throw Error('方案超出已确认扣除或缴费预算');
   const addedPension=Math.min(pension,Math.max(0,1200000-pensionActual));
-  const annualIncomeBase=gross-s.bonus-6000000-cash-d.baseline-other-Math.min(1200000,pensionActual+addedPension)-extra;
-  const annual=tax(annualIncomeBase+(mode==='combined'?s.bonus:0));
-  const bt=mode==='separate'?bonusTax(s.bonus):0,finalTax=annual.amount+bt;
+  const annualIncomeBase=gross-bonusAmount-6000000-cash-d.baseline-other-Math.min(1200000,pensionActual+addedPension)-extra;
+  const annual=tax(annualIncomeBase+(mode==='combined'?bonusAmount:0));
+  const bt=mode==='separate'?bonusTax(bonusAmount):0,finalTax=annual.amount+bt;
   const info=coverage(s);
-  return {...info,rows,gross,cash,special:d.baseline,extra,other,pensionActual,addedPension,annualIncomeBase,
+  return {...info,rows,gross,cash,special:d.baseline,extra,other,pensionActual,addedPension,annualIncomeBase,bonusAmount,
     annual:info.complete?annual:null,finalTax:info.complete?finalTax:null,bonusTax:bt,
     paid:paid===null?null:paid+bt,settlement:info.complete&&paid!==null?annual.amount-paid:null,
     disposable:info.complete?gross-cash-finalTax-after+reimburse-pensionActual-addedPension:null};
 }
 export function quickCalculate(s,opts={}){
-  validate(s);const q=s.quick,d=deductionTotals(s.deductions);
-  return annualResult(s,{gross:q.salary+s.bonus,cash:q.cash,other:q.otherDeduct,pensionActual:q.pensionPay,after:q.after,reimburse:q.reimburse,paid:null},opts,d,[]);
+  validate(s);const q=s.quick,d=q.source==='monthly'?deductionTotalsThrough(s.deductions,q.throughMonth):deductionTotals(s.deductions);
+  if(q.source==='manual')return annualResult(s,{gross:q.salary+s.bonus,cash:q.cash,other:q.otherDeduct,pensionActual:q.pensionPay,after:q.after,reimburse:q.reimburse,paid:null},opts,d,[]);
+  const months=s.months.slice(0,q.throughMonth),known=months.filter(m=>m.status!=='missing');
+  const gross=total(known.map(m=>m.salary+m.bonus+m.overtime+m.allowance-m.reduction));
+  const bonusAmount=s.bonusMonth<=q.throughMonth?s.bonus:0;
+  const monthly=calculate({...s,mode:'monthly'},opts),last=monthly.rows[q.throughMonth-1];
+  const lawfulSummary=lawfulDeductions();
+  for(const key of lawfulKeys)lawfulSummary[key]=total(known.map(m=>m.lawfulDeductions[key]));
+  const sourceSummary={throughMonth:q.throughMonth,filled:known.length,missing:months.flatMap((m,i)=>m.status==='missing'?[i+1]:[]),lawfulDeductions:lawfulSummary};
+  return {...annualResult(s,{gross:gross+bonusAmount,cash:total(known.flatMap(m=>cashKeys.map(k=>m[k]))),other:total(known.map(m=>m.otherDeduct)),pensionActual:total(known.map(m=>m.pensionPay)),after:total(known.map(m=>m.after)),reimburse:total(known.map(m=>m.reimburse)),paid:last?.valid?last.cumulativeTax:null,bonusAmount},opts,d,monthly.rows.slice(0,q.throughMonth)),sourceSummary};
 }
 export function calculate(s,opts={}){
   validate(s);if(s.mode==='quick')return quickCalculate(s,opts);
@@ -125,7 +142,7 @@ export function calculate(s,opts={}){
 }
 export function plans(s){
   validate(s);if(!coverage(s).complete||!s.scope)return [];
-  const d=deductionTotals(s.deductions),base=calculate(s);
+  const d=s.mode==='quick'&&s.quick.source==='monthly'?deductionTotalsThrough(s.deductions,s.quick.throughMonth):deductionTotals(s.deductions),base=calculate(s);
   const modes=s.bonusEligible&&s.bonus>0?['combined','separate']:[s.currentBonusMode];
   const extras=d.proposed>0?[0,d.proposed]:[0];
   const pension=Math.min(s.pensionPlan,Math.max(0,1200000-base.pensionActual));

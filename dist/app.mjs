@@ -69,10 +69,16 @@ function bind(){
   });
   submitForm('quickForm',fd=>{
     const next=structuredClone(state);
-    for(const k of quickKeys.filter(k=>k!=='otherDeduct'))next.quick[k]=cents(fd.get('q_'+k));
-    next.quick.lawfulDeductions=readLawful(fd,'q_');next.quick.otherDeduct=lawfulTotal(next.quick.lawfulDeductions);
+    const source=fd.get('quickSource');next.quick.source=source;next.quick.throughMonth=source==='monthly'?Number(fd.get('throughMonth')):next.quick.throughMonth;
+    if(source==='manual'){
+      for(const k of quickKeys.filter(k=>k!=='otherDeduct'))next.quick[k]=cents(fd.get('q_'+k));
+      next.quick.lawfulDeductions=readLawful(fd,'q_');next.quick.otherDeduct=lawfulTotal(next.quick.lawfulDeductions);
+    }
     next.quick.confirmed=fd.has('quickConfirmed');next.mode='quick';
-    if(!confirm(`确认提交${next.year}年度快算数据？\n\n全年工资：¥ ${(next.quick.salary/100).toFixed(2)}\n个人社保及公积金：¥ ${(next.quick.cash/100).toFixed(2)}\n其他依法扣除：¥ ${(next.quick.otherDeduct/100).toFixed(2)}\n\n月度记录不会被修改。`))return;
+    const missing=source==='monthly'?next.months.slice(0,next.quick.throughMonth).flatMap((m,i)=>m.status==='missing'?[i+1]:[]):[];
+    if(next.quick.confirmed&&missing.length)throw Error(`请先补齐截止月份内的${missing.join('、')}月，或调整汇总截止月份`);
+    const detail=source==='monthly'?`取数方式：月度汇总\n汇总范围：1—${next.quick.throughMonth}月\n已填写月份：${next.quick.throughMonth-missing.length}个月`:`取数方式：自行填写\n全年工资：¥ ${(next.quick.salary/100).toFixed(2)}\n个人社保及公积金：¥ ${(next.quick.cash/100).toFixed(2)}\n其他依法扣除：¥ ${(next.quick.otherDeduct/100).toFixed(2)}`;
+    if(!confirm(`确认提交${next.year}年度快算数据？\n\n${detail}\n\n不会覆盖或生成月度记录。`))return;
     commit(next,next.quick.confirmed?'年度输入已确认，未改动月度记录':'已保存草稿，确认完整输入后才能查看正式结果');flowStep=next.quick.confirmed?2:1;render();window.scrollTo(0,0);
   });
   submitForm('planForm',fd=>{
@@ -83,7 +89,7 @@ function bind(){
   });
   const scope=document.querySelector('#scope');
   if(scope)scope.onchange=()=>attempt(()=>{const next=structuredClone(state);next.scope=scope.checked;commit(next,'适用范围已保存');render();});
-  bindLawfulChoices();bindContributionPreview();bindDeductions();bindImport();
+  bindLawfulChoices();bindContributionPreview();bindQuickSource();bindDeductions();bindImport();
 }
 function bindLawfulChoices(){
   document.querySelectorAll('[data-law-toggle]').forEach(box=>box.onchange=()=>{
@@ -104,6 +110,16 @@ function bindContributionPreview(){
   };
   for(const id of ids){const el=document.querySelector('#'+id);if(el)el.addEventListener('input',update);}
   update();
+}
+function bindQuickSource(){
+  document.querySelectorAll('[data-quick-source]').forEach(box=>box.onchange=()=>{
+    if(box.value===state.quick.source)return;
+    const next=structuredClone(state);next.quick.source=box.value;next.quick.confirmed=false;state=next;dirty=true;flowStep=1;render();
+  });
+  const through=document.querySelector('#throughMonth');
+  if(through)through.onchange=()=>{
+    const next=structuredClone(state);next.quick.throughMonth=Number(through.value);next.quick.confirmed=false;state=next;dirty=true;flowStep=1;render();
+  };
 }
 function readDed(fd){
   const d={...editDed,type:fd.get('d_type'),person:fd.get('d_person').trim(),amount:cents(fd.get('d_amount')),usage:fd.get('d_usage'),timing:fd.get('d_timing'),confirmed:fd.has('d_confirmed')};
@@ -144,7 +160,7 @@ function bindImport(){
       const raw=await file.text(),pack=JSON.parse(raw),data=pack.data??pack;
       if(pack.rules&&pack.rules!==VERSION&&data.version===3)throw Error('规则版本不匹配，请使用对应版本工具核对后导入');
       const next=migrate(data);
-      if(!confirm(`导入${next.year}年度记录，将替换该年度快算、月度及扣除台账。其他年度保留。继续？`))return;
+      if(!confirm(`导入${next.year}年度记录，将替换该年度快算、月度及专项扣除申报台账。其他年度保留。继续？`))return;
       if(data.version===1||data.version===2){const key=`${KEY}-before-v${data.version+1}-${next.year}`;if(!localStorage.getItem(key))localStorage.setItem(key,JSON.stringify(data));}
       loadError='';commit(next,'备份已恢复；旧版扣除需分类确认');editDed=null;flowStep=1;render();
     }catch(error){toast('导入失败：'+error.message);}
