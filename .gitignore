@@ -1,0 +1,12 @@
+# Local build and deployment artifacts
+*.tar.gz
+*.zip
+
+# Personal exports created by the web app
+*备份.json
+*.csv
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+node_modules/

@@ -6,6 +6,8 @@
 
 在项目目录执行 `python -m http.server 8765 --directory dist`，在浏览器打开 http://localhost:8765 。ES 模块需要 HTTP 服务，不支持双击 HTML 直接运行。
 
+网页可作为纯静态站点发布。仓库已包含 GitHub Pages 自动发布配置；也可以把 `dist/` 部署到 Cloudflare Pages 或 Vercel。具体步骤、网址形式和数据存放原则见 [`DEPLOYMENT.md`](DEPLOYMENT.md)。
+
 ## P0 / P1 功能
 
 - 月度精算：区分未填写、确认零收入、预测和已发生；展示工资、社保、公积金、普通工资个税、奖金税和到手金额，并保留当月及累计扣缴去向。
