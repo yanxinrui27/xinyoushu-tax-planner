@@ -1,5 +1,6 @@
 import {blank,demo,month,migrate,validate,calculate,quickKeys,cashKeys,total,VERSION,lawfulKeys,lawfulDeductions,lawfulTotal,contributionAmounts} from './engine.mjs';
 import {deduction,TYPES} from './deductions.mjs';
+import {findPolicyMatches,POLICY_VERSION} from './policy-finder.mjs';
 import {KEY,initialState,readState,writeState} from './storage.mjs';
 import {page,names,labels} from './ui.mjs';
 
@@ -90,6 +91,7 @@ function bind(){
   const scope=document.querySelector('#scope');
   if(scope)scope.onchange=()=>attempt(()=>{const next=structuredClone(state);next.scope=scope.checked;commit(next,'适用范围已保存');render();});
   bindLawfulChoices();bindContributionPreview();bindQuickSource();bindDeductions();bindImport();
+  bindFinder();
 }
 function bindLawfulChoices(){
   document.querySelectorAll('[data-law-toggle]').forEach(box=>box.onchange=()=>{
@@ -151,6 +153,40 @@ function bindDeductions(){
     editDed=next;dirty=true;const y=window.scrollY;render();window.scrollTo(0,y);
   });
 }
+function bindFinder(){
+  document.querySelectorAll('[data-finder-step]').forEach(b=>b.onclick=()=>attempt(()=>{
+    if(!leave())return;const step=Number(b.dataset.finderStep);if(step<1||step>5||step>state.finder.step)throw Error('请先完成当前步骤');
+    const next=structuredClone(state);next.finder.step=step;commit(next);render();window.scrollTo(0,0);
+  }));
+  submitForm('finderForm',fd=>{
+    const next=structuredClone(state),a=next.finder.answers,step=next.finder.step;
+    if(step===1){
+      for(const k of ['baby','child'])a[k]=fd.get(k);
+      for(const k of ['babyCount','babyStart','babyEnd','babyShare','childCount','childStart','childEnd','childShare'])a[k]=Number(fd.get(k));
+    }else if(step===2){
+      for(const k of ['elder','sole'])a[k]=fd.get(k);
+      for(const k of ['elderStart','elderEnd'])a[k]=Number(fd.get(k));a.elderShare=cents(fd.get('elderShare'));
+    }else if(step===3){
+      for(const k of ['rent','cityHousing','loan','housingChoice'])a[k]=fd.get(k);
+      for(const k of ['rentStart','rentEnd','rentTier','loanStart','loanEnd','loanShare','loanUsedMonths'])a[k]=Number(fd.get(k));
+    }else if(step===4){
+      for(const k of ['degree','certificate','medical'])a[k]=fd.get(k);
+      for(const k of ['degreeStart','degreeEnd','degreeUsedMonths'])a[k]=Number(fd.get(k));
+      a.medicalSelfPay=cents(fd.get('medicalSelfPay'));a.medicalPerson=fd.get('medicalPerson').trim();
+      next.finder.completed=true;next.finder.reviewedAt=new Date().toISOString();next.finder.policyVersion=POLICY_VERSION;
+    }
+    next.finder.step=Math.min(5,step+1);commit(next,step===4?'已完成初步发现，请逐项核对':'回答已保存');render();window.scrollTo(0,0);
+  });
+  document.querySelectorAll('[data-finder-apply]').forEach(b=>b.onclick=()=>attempt(()=>{
+    if(!leave())return;const result=findPolicyMatches(state.finder,state.deductions),match=result.matches[Number(b.dataset.finderApply)];
+    if(!match||match.status!=='likely'||!match.ledgerDraft)throw Error('该项目需要先补充信息或处理冲突');
+    editDed=deduction({...match.ledgerDraft});tab='deductions';render();document.querySelector('#dedForm').scrollIntoView({block:'start',behavior:'smooth'});toast('已预填为备选新增扣除；请核对资格后保存');
+  }));
+  document.querySelectorAll('[data-finder-existing]').forEach(b=>b.onclick=()=>attempt(()=>{
+    if(!leave())return;const existing=state.deductions.find(d=>d.id===b.dataset.finderExisting);if(!existing)throw Error('未找到对应台账记录');
+    editDed=structuredClone(existing);tab='deductions';render();document.querySelector('#dedForm').scrollIntoView({block:'start',behavior:'smooth'});
+  }));
+}
 function bindImport(){
   const input=document.querySelector('#importFile');if(!input)return;
   input.onchange=async()=>{
@@ -158,7 +194,8 @@ function bindImport(){
       const file=input.files[0];if(!file)return;
       if(file.size>2000000)throw Error('备份文件超过2MB');
       const raw=await file.text(),pack=JSON.parse(raw),data=pack.data??pack;
-      if(pack.rules&&pack.rules!==VERSION&&data.version===3)throw Error('规则版本不匹配，请使用对应版本工具核对后导入');
+      const compatibleRules=['2026.10.21-v4'];
+      if(pack.rules&&pack.rules!==VERSION&&data.version===3&&!compatibleRules.includes(pack.rules))throw Error('规则版本不匹配，请使用对应版本工具核对后导入');
       const next=migrate(data);
       if(!confirm(`导入${next.year}年度记录，将替换该年度快算、月度及专项扣除申报台账。其他年度保留。继续？`))return;
       if(data.version===1||data.version===2){const key=`${KEY}-before-v${data.version+1}-${next.year}`;if(!localStorage.getItem(key))localStorage.setItem(key,JSON.stringify(data));}

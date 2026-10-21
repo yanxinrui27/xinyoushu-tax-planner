@@ -1,5 +1,6 @@
 import {deduction,validateDeductions,deductionTotals,deductionTotalsThrough} from './deductions.mjs';
-export const VERSION='2026.10.21-v4';
+import {blankFinder,normalizeFinder,validateFinder} from './policy-finder.mjs';
+export const VERSION='2026.10.22-v5-p0';
 export const bands=[[3600000,3,0],[14400000,10,252000],[30000000,20,1692000],[42000000,25,3192000],[66000000,30,5292000],[96000000,35,8592000],[Infinity,45,18192000]];
 export const cashKeys=['pension','medical','unemployment','socialOther','fund','fundExtra'];
 export const numKeys=['salary','bonus','overtime','allowance','reduction',...cashKeys,'otherDeduct','after','reimburse','pensionPay'];
@@ -22,7 +23,7 @@ export function month(seed={}){
 export function defaultThroughMonth(year,now=new Date()){
   return year<now.getFullYear()?12:year>now.getFullYear()?1:now.getMonth()+1;
 }
-export function blank(year=2026){return {version:3,year,selected:0,demo:false,scope:false,mode:'monthly',currentBonusMode:'combined',bonus:0,bonusMonth:12,bonusEligible:false,pensionPlan:0,goal:'cash',deductions:[],migrationNotice:false,quick:{...Object.fromEntries(quickKeys.map(k=>[k,0])),lawfulDeductions:lawfulDeductions(),source:'monthly',throughMonth:defaultThroughMonth(year),confirmed:false},months:Array.from({length:12},()=>month())};}
+export function blank(year=2026){return {version:3,year,selected:0,demo:false,scope:false,mode:'monthly',currentBonusMode:'combined',bonus:0,bonusMonth:12,bonusEligible:false,pensionPlan:0,goal:'cash',deductions:[],finder:blankFinder(),migrationNotice:false,quick:{...Object.fromEntries(quickKeys.map(k=>[k,0])),lawfulDeductions:lawfulDeductions(),source:'monthly',throughMonth:defaultThroughMonth(year),confirmed:false},months:Array.from({length:12},()=>month())};}
 export function demo(){
   const s=blank();
   const make=()=>{const m=month({status:'forecast',salary:2500000,socialBase:2000000,fundBase:2000000});Object.assign(m,contributionAmounts(m));return m;};
@@ -49,7 +50,7 @@ export function validate(s){
   for(const k of quickKeys)if(!amount(s.quick[k]))throw Error('年度快算金额无效');
   validateLawful(s.quick.lawfulDeductions,240000);if(s.quick.otherDeduct!==lawfulTotal(s.quick.lawfulDeductions))throw Error('年度依法扣除分类合计不一致');
   if(s.currentBonusMode==='separate'&&!s.bonusEligible)throw Error('基准单独计税需要先确认奖金资格');
-  validateDeductions(s.deductions);return s;
+  validateDeductions(s.deductions);validateFinder(s.finder);return s;
 }
 function validateLawful(value,healthCap){
   if(!value||typeof value!=='object')throw Error('其他依法扣除分类缺失');
@@ -60,11 +61,12 @@ export function migrate(raw){
   if(raw?.version===3){
     const s=structuredClone(raw);
     if(s.quick){s.quick.source??=s.quick.confirmed?'manual':'monthly';s.quick.throughMonth??=defaultThroughMonth(s.year);}
+    s.finder=normalizeFinder(s.finder);
     return validate(s);
   }
   if(raw?.version===2){
     const s=structuredClone(raw);s.version=3;s.migrationNotice=true;
-    s.months=s.months.map(old=>month({...old,lawfulDeductions:lawfulDeductions({other:old.otherDeduct})}));
+    s.months=s.months.map(old=>month({...old,lawfulDeductions:lawfulDeductions({other:old.otherDeduct})}));s.finder=blankFinder();
     s.quick={...Object.fromEntries(quickKeys.map(k=>[k,0])),...s.quick,source:s.quick?.confirmed?'manual':'monthly',throughMonth:defaultThroughMonth(s.year),lawfulDeductions:lawfulDeductions({other:s.quick?.otherDeduct??0})};
     return validate(s);
   }
