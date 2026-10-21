@@ -16,7 +16,7 @@
 
 在项目目录执行 `python -m http.server 8765 --directory dist`，在浏览器打开 http://localhost:8765 。ES 模块需要 HTTP 服务，不支持双击 HTML 直接运行。
 
-网页可作为纯静态站点发布。仓库默认只在推送后自动运行测试，暂不自动发布 GitHub Pages；需要公开新网址时，可按 [`DEPLOYMENT.md`](DEPLOYMENT.md) 启用 GitHub Pages，或把 `dist/` 部署到 Cloudflare Pages、Vercel。
+网页已通过 GitHub Pages 自动发布，公开地址为 [https://yanxinrui27.github.io/xinyoushu-tax-planner/](https://yanxinrui27.github.io/xinyoushu-tax-planner/)。也可以把 `dist/` 部署到 Cloudflare Pages 或 Vercel；具体步骤和数据存放原则见 [`DEPLOYMENT.md`](DEPLOYMENT.md)。
 
 ## P0 / P1 功能
 
