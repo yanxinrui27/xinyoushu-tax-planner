@@ -2,6 +2,16 @@
 
 移动端适配的纯前端工具。没有后端，不上传工资数据。演示数据只用于展示；首次使用请建立空白年度并录入本人信息。
 
+[打开在线版本](https://sienna-tax-planner-20261021.amberapple257.chatgpt.site/)
+
+![月度精算测试案例展示](docs/screenshots/monthly-demo.png)
+
+## 快速体验
+
+仓库内置 4 组虚构测试案例，覆盖月度阶段汇总、完整年度奖金与筹划、年度自行填写、缺失月份阻断校验。打开网页后进入“设置与备份”，点击“↑ 导入备份”，选择 [`test-data`](test-data) 中的 JSON 文件即可恢复对应情景。
+
+推荐先导入 `01-月度汇总-截至10月.json`。它会显示 1—9 月“已发生”、10 月“预测”、11—12 月“未填写”三种月份状态，并生成截至 10 月的年度阶段汇总和筹划结果。所有测试金额均为虚构数据。
+
 ## 使用
 
 在项目目录执行 `python -m http.server 8765 --directory dist`，在浏览器打开 http://localhost:8765 。ES 模块需要 HTTP 服务，不支持双击 HTML 直接运行。
@@ -41,3 +51,5 @@ node test-storage.mjs
 ```
 
 规则范围和验收条件见 `SPEC-P01.md`。
+
+测试案例的输入说明和预期结果见 [`test-data/README.md`](test-data/README.md)，结构化结果摘要见 [`test-data/expected-results.csv`](test-data/expected-results.csv)。
