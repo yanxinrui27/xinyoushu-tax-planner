@@ -13,7 +13,7 @@ dist/                       可直接发布的网页
   storage.mjs
   ui.mjs
   style.css
-.github/workflows/pages.yml GitHub Pages 自动发布
+.github/workflows/pages.yml 推送与 PR 自动测试
 test*.mjs                   计算与存储测试
 SPEC-P01.md                 功能边界和验收条件
 README.md                   项目说明
@@ -38,8 +38,8 @@ https://<GitHub用户名>.github.io/<仓库名>/
 1. 在 GitHub 新建空仓库，把本项目根目录推送到 `main` 分支。
 2. 打开仓库 `Settings → Pages`。
 3. 在 `Build and deployment` 中选择 `GitHub Actions`。
-4. 推送 `main` 后，`.github/workflows/pages.yml` 会自动发布 `dist/`。
-5. 在 Actions 中确认 `Deploy web app to GitHub Pages` 成功，再打开 Pages 给出的地址。
+4. 当前仓库默认仅运行测试，不自动发布。决定正式公开网页时，再使用 GitHub 提供的 Pages 静态站点工作流，发布目录选择 `dist/`。
+5. 在 Actions 中确认测试与 Pages 部署均成功，再打开 Pages 给出的地址。
 
 GitHub Pages 站点本身对互联网公开，即使付费计划允许从私有仓库发布，也不能把网页访问权限理解为私有。请始终只发布程序文件，不发布用户数据。
 
