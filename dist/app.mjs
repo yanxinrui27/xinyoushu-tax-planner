@@ -3,15 +3,43 @@ import {deduction,TYPES} from './deductions.mjs';
 import {findPolicyMatches,POLICY_VERSION} from './policy-finder.mjs';
 import {KEY,initialState,readState,writeState} from './storage.mjs';
 import {page,names,labels} from './ui.mjs';
+import {accountInfo,hasActiveSession,registerAccount,loginAccount,changePassword,logout} from './auth.mjs';
+import {authPage} from './auth-ui.mjs';
 
-let state=demo(),tab='overview',dirty=false,editDed=null,loadError='',flowStep=1;
-try{state=initialState(localStorage);}catch(error){loadError=`本机记录未加载：${error.message}。原始数据未覆盖，可到设置页导出备份。`;}
+let state=demo(),tab='overview',dirty=false,editDed=null,loadError='',flowStep=1,account=null;
 const app=document.querySelector('#app');
 function toast(message){
   const el=document.querySelector('#toast');el.textContent=message;el.style.display='block';
   clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',4200);
 }
-function render(){app.innerHTML=page(state,tab,editDed,flowStep);bind();}
+function render(){app.innerHTML=page(state,tab,editDed,flowStep,account?.username);bind();}
+function renderAuth(mode,message=''){app.innerHTML=authPage(mode,message,account?.username);bindAuth(mode);}
+function unlockApp(){
+  loadError='';
+  try{state=initialState(localStorage);}catch(error){loadError=`本机记录未加载：${error.message}。原始数据未覆盖，可到设置页导出备份。`;}
+  render();if(loadError)setTimeout(()=>toast(loadError),100);
+}
+function bindAuth(mode){
+  const form=document.querySelector(mode==='register'?'#registerForm':'#loginForm');if(!form)return;
+  form.onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(form),button=form.querySelector('button[type="submit"]'),old=button.textContent;
+    button.disabled=true;button.textContent=mode==='register'?'正在创建…':'正在登录…';
+    try{
+      if(mode==='register')await registerAccount(localStorage,sessionStorage,{username:fd.get('username'),password:fd.get('authPassword'),confirmPassword:fd.get('authConfirmPassword')});
+      else await loginAccount(localStorage,sessionStorage,{username:fd.get('username'),password:fd.get('authPassword')});
+      account=accountInfo(localStorage);unlockApp();
+    }catch(error){renderAuth(mode,error.message);}
+    finally{if(button.isConnected){button.disabled=false;button.textContent=old;}}
+  };
+}
+function boot(){
+  try{
+    account=accountInfo(localStorage);
+    if(!account){renderAuth('register');return;}
+    if(!hasActiveSession(localStorage,sessionStorage)){renderAuth('login');return;}
+    unlockApp();
+  }catch(error){renderAuth('login',error.message);}
+}
 function leave(){if(dirty&&!confirm('当前有未保存输入，放弃修改并继续？'))return false;dirty=false;return true;}
 function commit(next,message){
   validate(next);if(loadError)throw Error('原始记录加载失败，先导出原始记录或导入有效备份，再修改数据。');
@@ -90,8 +118,21 @@ function bind(){
   });
   const scope=document.querySelector('#scope');
   if(scope)scope.onchange=()=>attempt(()=>{const next=structuredClone(state);next.scope=scope.checked;commit(next,'适用范围已保存');render();});
+  bindPasswordChange();
   bindLawfulChoices();bindContributionPreview();bindQuickSource();bindDeductions();bindImport();
   bindFinder();
+}
+function bindPasswordChange(){
+  const form=document.querySelector('#changePasswordForm');if(!form)return;
+  form.onsubmit=async e=>{
+    e.preventDefault();const fd=new FormData(form),button=form.querySelector('button[type="submit"]'),old=button.textContent;
+    button.disabled=true;button.textContent='正在更新…';
+    try{
+      await changePassword(localStorage,{currentPassword:fd.get('currentPassword'),newPassword:fd.get('newPassword'),confirmPassword:fd.get('confirmPassword')});
+      form.reset();toast('密码已更新');
+    }catch(error){toast(error.message);}
+    finally{button.disabled=false;button.textContent=old;}
+  };
 }
 function bindLawfulChoices(){
   document.querySelectorAll('[data-law-toggle]').forEach(box=>box.onchange=()=>{
@@ -223,6 +264,9 @@ function exportCSV(){
   download(`薪有数-${state.year}-${state.mode==='quick'?'年度快算':'月度明细'}.csv`,'\ufeff'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n'),'text/csv;charset=utf-8');toast('当前模式明细已导出');
 }
 function action(name){
+  if(name==='logout'){
+    if(!leave())return;logout(sessionStorage);state=demo();account=null;tab='overview';editDed=null;flowStep=1;renderAuth('login','已退出当前本机账号');return;
+  }
   if(name==='backup'){
     const raw=loadError?localStorage.getItem(KEY):null;
     download(`薪有数-${state.year}-备份.json`,raw??JSON.stringify({format:'xinyoushu',rules:VERSION,exportedAt:new Date().toISOString(),data:state},null,2),'application/json');return;
@@ -254,4 +298,4 @@ function action(name){
   if(name==='cancelDed'){if(!leave())return;editDed=null;render();}
 }
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
-render();if(loadError)setTimeout(()=>toast(loadError),100);
+boot();
