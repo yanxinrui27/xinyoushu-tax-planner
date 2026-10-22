@@ -25,12 +25,10 @@ jobs:
           node test-p01.mjs
           node test-storage.mjs
           node test-policy-finder.mjs
-          node test-auth.mjs
+          node test-public-access.mjs
       - name: Check browser module syntax
         run: |
           node --check dist/app.mjs
-          node --check dist/auth.mjs
-          node --check dist/auth-ui.mjs
           node --check dist/engine.mjs
           node --check dist/policy-finder.mjs
           node --check dist/storage.mjs

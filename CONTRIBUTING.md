@@ -37,14 +37,14 @@ node test.mjs
 node test-p01.mjs
 node test-storage.mjs
 node test-policy-finder.mjs
-node test-auth.mjs
+node test-public-access.mjs
 node --check dist/app.mjs
 node --check dist/ui.mjs
 ```
 
 还应在桌面和窄屏下检查：
 
-- 首次注册、退出和重新登录；
+- 公开链接无需账号即可进入工作台；
 - 月度与年度两步流程；
 - 页面确认框；
 - JSON 备份导出与导入；
