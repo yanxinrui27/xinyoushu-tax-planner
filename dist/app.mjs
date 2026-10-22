@@ -4,7 +4,7 @@ import {findPolicyMatches,POLICY_VERSION} from './policy-finder.mjs';
 import {KEY,initialState,readState,writeState} from './storage.mjs';
 import {page,names,labels} from './ui.mjs';
 import {accountInfo,hasActiveSession,registerAccount,loginAccount,changePassword,logout} from './auth.mjs';
-import {authPage} from './auth-ui.mjs';
+import {authPage} from './auth-ui.mjs?v=5.4';
 
 let state=demo(),tab='overview',dirty=false,editDed=null,loadError='',flowStep=1,account=null;
 const app=document.querySelector('#app');
