@@ -59,7 +59,7 @@ test('same-version old backup gains finder defaults without losing data',()=>{
 });
 
 test('finder page exposes the guided flow and policy-safe wording',()=>{
-  const html=page(blank(2026),'finder');assert.match(html,/让政策主动找到你/);assert.match(html,/子女与照护/);assert.match(html,/可能遗漏/);assert.match(html,/不需要姓名、证件号/);
+  const html=page(blank(2026),'finder');assert.match(html,/让政策主动找到你/);assert.match(html,/子女与照护/);assert.match(html,/可能遗漏/);assert.match(html,/不填写姓名、证件号或病历/);
 });
 
 console.log(`${passed} policy finder tests passed`);

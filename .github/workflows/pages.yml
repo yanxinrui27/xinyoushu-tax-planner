@@ -33,6 +33,7 @@ jobs:
           node --check dist/auth-ui.mjs
           node --check dist/engine.mjs
           node --check dist/policy-finder.mjs
+          node --check dist/profile.mjs
           node --check dist/storage.mjs
           node --check dist/ui.mjs
 

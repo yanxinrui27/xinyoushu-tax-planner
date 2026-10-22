@@ -1,6 +1,6 @@
 import {deduction,validateDeductions,deductionTotals,deductionTotalsThrough} from './deductions.mjs';
 import {blankFinder,normalizeFinder,validateFinder} from './policy-finder.mjs';
-export const VERSION='2026.10.22-v5-p0';
+export const VERSION='2026.10.22-v5.5';
 export const bands=[[3600000,3,0],[14400000,10,252000],[30000000,20,1692000],[42000000,25,3192000],[66000000,30,5292000],[96000000,35,8592000],[Infinity,45,18192000]];
 export const cashKeys=['pension','medical','unemployment','socialOther','fund','fundExtra'];
 export const numKeys=['salary','bonus','overtime','allowance','reduction',...cashKeys,'otherDeduct','after','reimburse','pensionPay'];
@@ -46,8 +46,8 @@ export function validate(s){
   for(const k of ['bonus','pensionPlan'])if(!amount(s[k]))throw Error('方案金额无效');
   if(s.pensionPlan>1200000)throw Error('新增养老金预算不得超过12000元');
   if(!Number.isInteger(s.bonusMonth)||s.bonusMonth<1||s.bonusMonth>12)throw Error('奖金月份无效');
-  if(!s.quick||typeof s.quick.confirmed!=='boolean'||!['monthly','manual'].includes(s.quick.source)||!Number.isInteger(s.quick.throughMonth)||s.quick.throughMonth<1||s.quick.throughMonth>12)throw Error('年度快算格式无效');
-  for(const k of quickKeys)if(!amount(s.quick[k]))throw Error('年度快算金额无效');
+  if(!s.quick||typeof s.quick.confirmed!=='boolean'||!['monthly','manual'].includes(s.quick.source)||!Number.isInteger(s.quick.throughMonth)||s.quick.throughMonth<1||s.quick.throughMonth>12)throw Error('年度精算格式无效');
+  for(const k of quickKeys)if(!amount(s.quick[k]))throw Error('年度精算金额无效');
   validateLawful(s.quick.lawfulDeductions,240000);if(s.quick.otherDeduct!==lawfulTotal(s.quick.lawfulDeductions))throw Error('年度依法扣除分类合计不一致');
   if(s.currentBonusMode==='separate'&&!s.bonusEligible)throw Error('基准单独计税需要先确认奖金资格');
   validateDeductions(s.deductions);validateFinder(s.finder);return s;
