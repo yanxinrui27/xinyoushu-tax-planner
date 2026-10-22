@@ -19,11 +19,22 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Run calculation and storage tests
+      - name: Run full regression suite
         run: |
           node test.mjs
           node test-p01.mjs
           node test-storage.mjs
+          node test-policy-finder.mjs
+          node test-auth.mjs
+      - name: Check browser module syntax
+        run: |
+          node --check dist/app.mjs
+          node --check dist/auth.mjs
+          node --check dist/auth-ui.mjs
+          node --check dist/engine.mjs
+          node --check dist/policy-finder.mjs
+          node --check dist/storage.mjs
+          node --check dist/ui.mjs
 
   deploy:
     needs: test

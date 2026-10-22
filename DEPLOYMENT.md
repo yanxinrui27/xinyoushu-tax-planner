@@ -1,74 +1,131 @@
-# Web 发布与代码存放方案
+# 部署、发布与数据迁移
 
-## 推荐结构
+## 当前生产环境
 
-本项目是无后端、无构建步骤的静态 Web 应用。仓库保存源码和测试，发布平台只托管 `dist/`：
+- 代码仓库：[yanxinrui27/xinyoushu-tax-planner](https://github.com/yanxinrui27/xinyoushu-tax-planner)
+- 生产地址：[https://yanxinrui27.github.io/xinyoushu-tax-planner/](https://yanxinrui27.github.io/xinyoushu-tax-planner/)
+- 生产分支：`main`
+- 发布目录：`dist`
+- 发布方式：GitHub Actions → GitHub Pages
 
-```text
-dist/                       可直接发布的网页
-  index.html
-  app.mjs
-  engine.mjs
-  deductions.mjs
-  storage.mjs
-  ui.mjs
-  style.css
-.github/workflows/pages.yml GitHub Pages 自动测试与发布
-test*.mjs                   计算与存储测试
-SPEC-P01.md                 功能边界和验收条件
-README.md                   项目说明
-```
+## 仓库存放原则
 
-工资、扣除和测算结果不写入 GitHub，也不上传到托管平台。它们只保存在访问者当前浏览器的 `localStorage` 中。用户应定期导出 JSON 备份；公开仓库中不要提交任何个人备份、CSV、工资表或真实身份信息。
+仓库只保存程序、测试、规格、虚构案例和文档。以下内容禁止提交：
 
-`.openai/hosting.json` 只用于当前 Sites 发布项目。建立独立 GitHub 仓库时，请先复制项目到一个新目录，并在副本中删除 `.openai/` 后再初始化 Git 仓库；不要从当前 Sites 项目中删除它。GitHub Pages、Cloudflare Pages 和 Vercel 都不需要这个文件。
+- 用户导出的 JSON 备份；
+- 月度或年度 CSV；
+- 真实工资表；
+- 身份、医疗、贷款或家庭成员资料；
+- 浏览器存储的账号和密码校验数据。
 
-## 更换网址前的数据迁移
+工资、扣除和测算结果只保存在访问者浏览器。GitHub Pages 托管的 `dist/` 不包含用户数据。
 
-浏览器本地记录按网站域名隔离。当前网址里的记录不会自动出现在新的 `github.io`、`pages.dev`、`vercel.app` 或自定义域名中，不同浏览器和不同设备之间也不会自动同步。更换正式网址前，应在旧网址导出完整 JSON 备份，再到新网址导入；确认数据无误后再把新网址作为日常入口。
+## 自动发布流程
 
-## 方案一：公开 GitHub 仓库 + GitHub Pages
+`.github/workflows/pages.yml` 在以下情况运行：
 
-适合开源、演示或个人作品。仓库免费公开，网页地址通常为：
+- 向 `main` 推送提交；
+- 在 GitHub Actions 页面手动触发。
 
-```text
-https://<GitHub用户名>.github.io/<仓库名>/
-```
+发布门禁按顺序执行：
 
-1. 在 GitHub 新建空仓库，把本项目根目录推送到 `main` 分支。
-2. 打开仓库 `Settings → Pages`。
-3. 在 `Build and deployment` 中选择 `GitHub Actions`。
-4. 推送 `main` 后，`.github/workflows/pages.yml` 会先运行测试，再自动发布 `dist/`。
-5. 在 Actions 中确认 `Deploy web app to GitHub Pages` 成功，再打开 Pages 给出的地址。
+1. 运行核心计算测试；
+2. 运行 P0/P1 功能测试；
+3. 运行本机存储和迁移测试；
+4. 运行政策找人规则测试；
+5. 运行本机账号测试；
+6. 检查浏览器模块语法；
+7. 上传 `dist/`；
+8. 发布 GitHub Pages。
 
-GitHub Pages 站点本身对互联网公开，即使付费计划允许从私有仓库发布，也不能把网页访问权限理解为私有。请始终只发布程序文件，不发布用户数据。
+任何检查失败都会阻止本次部署。
 
-## 方案二：私有 GitHub 仓库 + Cloudflare Pages（推荐正式使用）
-
-适合保留源码私有，同时提供任何浏览器都能打开的公开网址。
-
-1. 把本项目放入私有 GitHub 仓库。
-2. 在 Cloudflare Pages 连接该仓库，生产分支选 `main`。
-3. 构建命令留空或使用 `exit 0`，输出目录填写 `dist`。
-4. 首次部署后得到 `https://<项目名>.pages.dev`。
-5. 需要品牌网址时，再绑定自己的域名并开启 HTTPS。
-
-Cloudflare 会在每次推送后自动发布，并可为分支或 Pull Request 提供预览地址。
-
-## 方案三：私有 GitHub 仓库 + Vercel
-
-同样支持 GitHub 自动部署和预览地址。导入仓库时选择静态项目，输出目录填写 `dist`，无需安装依赖或执行构建。适合以后增加前端框架或服务端能力，但当前纯静态项目使用 Cloudflare Pages 更直接。
-
-## 自定义域名
-
-可以购买一个域名，例如 `tax.example.com`，绑定到 GitHub Pages、Cloudflare Pages 或 Vercel。域名只负责访问入口，不应改变本工具的本地数据存储方式。配置后应强制 HTTPS，并同时测试首页、模块加载、备份导出和手机布局。
-
-## 发布前检查
+## 手动发布前检查
 
 ```powershell
 node test.mjs
 node test-p01.mjs
 node test-storage.mjs
+node test-policy-finder.mjs
+node test-auth.mjs
+git status --short
 ```
 
-检查通过后再推送 `main`。如果未来增加账号、多设备同步或团队共享，需要单独设计身份认证、数据库、加密、备份与隐私策略；不要使用 GitHub 仓库或静态站点保存个人工资数据。
+确认通过后提交并推送：
+
+```powershell
+git add .
+git commit -m "Describe the change"
+git push origin main
+```
+
+进入仓库的 `Actions` 页面查看 `Deploy web app to GitHub Pages`。工作流成功后，再打开生产地址验证首页、模块资源和主要流程。
+
+## GitHub Pages 初次配置
+
+如果从新仓库重新部署：
+
+1. 将项目推送到 `main`。
+2. 打开 `Settings → Pages`。
+3. 在 `Build and deployment` 中选择 `GitHub Actions`。
+4. 手动运行或重新推送一次 Pages 工作流。
+5. 确认工作流展示的公开地址。
+
+GitHub Pages 网站对互联网公开。公开仓库和网页都不能存放真实个人工资数据。
+
+## 数据和账号迁移
+
+浏览器数据按“协议 + 域名 + 端口”隔离。下面这些环境互不共享数据：
+
+- `localhost` 与正式网址；
+- `github.io` 与自定义域名；
+- Chrome 与 Edge；
+- 不同电脑或手机。
+
+迁移步骤：
+
+1. 在旧网址登录并导出完整 JSON 备份。
+2. 在新网址创建新的本机账号和密码。
+3. 进入“设置与备份”导入 JSON。
+4. 核对年度、月份、扣除台账和计算结果。
+5. 确认完成后再把新网址设为日常入口。
+
+备份不包含本机账号和密码。账号需要在新环境重新创建。
+
+## 回滚
+
+如果最新版本出现严重问题：
+
+1. 找到最后一个验证通过的提交；
+2. 创建一个正常的回退提交恢复相关文件；
+3. 推送到 `main`；
+4. 等待完整测试和 Pages 重新发布；
+5. 验证生产地址。
+
+不要强制改写公开分支历史。数据结构有变化时，必须同时评估浏览器存量记录的迁移兼容性。
+
+## 其他托管平台
+
+### Cloudflare Pages
+
+- 生产分支：`main`
+- 构建命令：留空
+- 输出目录：`dist`
+
+### Vercel
+
+- Framework Preset：`Other`
+- 构建命令：留空
+- 输出目录：`dist`
+
+迁移到其他平台不会自动迁移浏览器数据，也不会把本机账号升级为云端账户。
+
+## 自定义域名
+
+绑定自定义域名后应启用 HTTPS，并重新测试：
+
+- 首次注册、登录、退出和修改密码；
+- 月度和年度计算；
+- JSON 备份导出与导入；
+- 手机布局；
+- 旧域名到新域名的数据迁移说明。
